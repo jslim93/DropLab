@@ -62,7 +62,7 @@ def run_single_series(n_ptcl=2000, nt=1000, collect_every=50, diagnostic="LWC", 
             False, z_parcel, zmax, w)
 
         if (t + 1) % collect_every == 0:
-            sp, qa, qc, qr, na, nc, nr, _, ra, rs = ts_analysis(
+            sp, qa, qc, qr, na, nc, nr, _, ra, rs, _, _, _ = ts_analysis(
                 particles_list, air_mass, rm_spec, 60, n_ptcl)
             rho2, _, _ = parcel_rho(P_parcel, T_parcel)
             value = {"LWC": (qc + qr) * rho2, "Nr": nr, "Nc": nc, "qc": qc, "qr": qr}[diagnostic]

@@ -75,6 +75,19 @@ def ts_analysis(particles_list,air_mass_parcel,log_edges, nbins, n_particles):
         rc_liq_avg = 0.0
         rc_liq_std = 0.0
 
+    # Weighted mean and standard deviation of radius over ALL droplets (haze included),
+    # from the id-indexed radius/weight arrays. Complements the cloud-only rc_ statistics.
+    total_weight_all = np.sum(particles_a)
+    if total_weight_all > 0:
+        r_liq_avg = np.nansum(particles_r * particles_a) / total_weight_all
+        r_liq_std = np.sqrt(np.nansum(particles_a * (particles_r - r_liq_avg)**2) / total_weight_all)
+    else:
+        r_liq_avg = 0.0
+        r_liq_std = 0.0
+    # Id-indexed cloud+rain radii (0 for haze), mirroring particles_r so it can be stacked
+    # per timestep exactly like the all-droplet particles_array.
+    particles_rc = np.where(particles_r > activation_radius_ts, particles_r, 0.0)
+
     # Unit conversion of mixing ratios
     qc = qc_mass / air_mass_parcel *1e3
     qr = qr_mass / air_mass_parcel *1e3
@@ -85,7 +98,11 @@ def ts_analysis(particles_list,air_mass_parcel,log_edges, nbins, n_particles):
     NC = NC / air_mass_parcel /1e6
     NR = NR / air_mass_parcel /1e6
     
-    return(spec,qa, qc,qr, NA, NC, NR, particles_r, rc_liq_avg, rc_liq_std)
+    # Appended (kept at the END so existing positional unpacking of the first 10 is unaffected):
+    #   r_liq_avg, r_liq_std  = all-droplet weighted mean/std radius
+    #   particles_rc          = id-indexed cloud+rain radii (0 for haze)
+    return(spec,qa, qc,qr, NA, NC, NR, particles_r, rc_liq_avg, rc_liq_std,
+           r_liq_avg, r_liq_std, particles_rc)
 
 def get_spec(nbins,spectra_arr,log_edges,r_liq,weight_factor,air_mass_parcel):
     # Computes array of the spectra

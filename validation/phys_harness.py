@@ -64,7 +64,7 @@ def run(seed=0, n_ptcl=2000, nt=1500, dt=1.0, T0=293.2, P0=1013e2, RH=0.92, w=1.
                 dt, pl, rp, rho_liq, P, T, ac, au, pr, False, z, 3000.0, w,
                 False, False, switch_TICE, eps)
         if (t + 1) in collect:
-            spec, qa, qc, qr, NA, NC, NR, _, rvol, rstd = ts_analysis(
+            spec, qa, qc, qr, NA, NC, NR, _, rvol, rstd, _, _, _ = ts_analysis(
                 pl, am, [1e-6, 25e-6], 60, n_ptcl)
             out[t + 1] = dict(T=T - 273.15, z=z, qc=qc, qr=qr,
                               NC=NC, NR=NR, NA=NA, rv=rvol, rstd=rstd)
