@@ -1,5 +1,8 @@
 """NetCDF output + selectable process diagnostics."""
 import numpy as np
+import pytest
+
+pytest.importorskip("xarray", reason="NetCDF output needs xarray (pip install xarray netCDF4)")
 from droplab.flow2d_dynamic import run_flow2d_dynamic
 from droplab.output import save_run, gridded
 
