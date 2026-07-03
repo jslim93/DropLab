@@ -1,0 +1,18 @@
+# DropLab sandbox — base theme (the "cirrus" palette).
+# A cool, instrument-room identity: storm-ink text on a cirrus-white field,
+# bolt-blue as the single primary accent. Deliberately NOT cream/terracotta
+# nor black/acid-green. Fine typographic details are layered on in
+# app/ui/theme.py via injected CSS (Space Grotesk / Inter / JetBrains Mono).
+[theme]
+base = "light"
+primaryColor = "#2D6BE0"
+backgroundColor = "#F6F8FB"
+secondaryBackgroundColor = "#ECF1F8"
+textColor = "#0C1626"
+font = "sans serif"
+
+[server]
+runOnSave = true
+
+[browser]
+gatherUsageStats = false

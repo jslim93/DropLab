@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "If you use DropLab in teaching or research, please cite it as below."
+title: "DropLab: an educational Lagrangian laboratory for cloud microphysics"
+version: 2.0.0
+date-released: 2026-07-02
+authors:
+  - family-names: "Lim"
+    given-names: "Jung-Sub"
+license: MIT
+repository-code: "https://github.com/jslim93/DropLab"
+keywords:
+  - cloud microphysics
+  - Lagrangian super-droplets
+  - mixed-phase clouds
+  - education
+  - climate intervention
+preferred-citation:
+  type: article
+  title: "DropLab v2.0: an educational Lagrangian laboratory for cloud microphysics — from warm-rain parcels to mixed-phase deep convection and climate-intervention demonstrations"
+  authors:
+    - family-names: "Lim"
+      given-names: "Jung-Sub"
+  journal: "Journal of Advances in Modeling Earth Systems (in preparation)"
+  year: 2026

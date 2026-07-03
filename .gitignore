@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+# Numba cache
+*.nbc
+*.nbi
+# Jupyter
+.ipynb_checkpoints/
+# macOS
+.DS_Store
+# Project output
+Output/
+output.csv
+ensemble.csv
+*_out.csv
+# Envs
+.venv/
+env/
+venv/
+# Internal planning/spec artifacts (not for distribution)
+docs/superpowers/
+# NOTE: manuscript_material/ is TRACKED in git (reproducibility) but excluded from the
+# pip package via pyproject [tool.setuptools] packages — do NOT .gitignore it. Generated
+# binaries inside it are ignored by manuscript_material/.gitignore (figures/, results/*.png).
+# Local project instructions (not for distribution)
+CLAUDE.md
+
+# 2D flow animation outputs (not shipped)
+*.gif
+*.mp4
+flow2d.gif
