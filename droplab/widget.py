@@ -151,7 +151,9 @@ def kappa_settings():
 def timestep_display_mode_settings():
     # Widget to set the mode of the continuously updated output during model run time: either output of variables in text form (fast, recommended) = 'text'
     # or: continuously updated plot using plotly (slower, memory consuming) = 'graphics'
-    mode_displaytype_widget = widgets.ToggleButtons(options=['text_fast', 'graphics'], value='graphics', layout={'width': 'max-content'}, disabled=False)
+    # Default to the fast text mode: it needs no extra packages and runs everywhere. The
+    # 'graphics' live-plot mode is optional and requires `anywidget` (pip install anywidget).
+    mode_displaytype_widget = widgets.ToggleButtons(options=['text_fast', 'graphics'], value='text_fast', layout={'width': 'max-content'}, disabled=False)
     display('Display mode: ', mode_displaytype_widget)
     
     return mode_displaytype_widget

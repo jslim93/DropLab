@@ -1,4 +1,5 @@
 import numpy as np
+import os
 from matplotlib import pyplot as plt
 import time
 import pylab as pl
@@ -104,7 +105,8 @@ def save_model_output_variables(time_array, RH_parcel_array, q_parcel_array, T_p
     output_variables_dataframe = pd.DataFrame(output_variables_array)
     output_variables_dataframe.columns=['time', 'RH_parcel', 'q_parcel', 'T_parcel', 'z_parcel', 'qa_ts', 'qc_ts', 'qr_ts', 'na_ts', 'nc_ts', 'nr_ts']
     
-    # Save to csv
+    # Save to csv (create the Output/ folder on first use so a fresh clone just works)
+    os.makedirs('Output', exist_ok=True)
     output_variables_dataframe.to_csv('Output/'+filename)
     print('Output data written to: Output/'+filename)
     
@@ -126,6 +128,7 @@ def save_model_output_dsd(spectra_arr, rm_spec, rl_spec, rr_spec, nt, filename='
     # Convert to pandas DataFrame and assigning rowlist as index column (row names)
     dsd_dataframe = pd.DataFrame(dsd_array, index=rowlist)
 
-    # Save to csv
+    # Save to csv (create the Output/ folder on first use so a fresh clone just works)
+    os.makedirs('Output', exist_ok=True)
     dsd_dataframe.to_csv('Output/'+filename)
-    print('Output data of droplet size distribution written to: Output/'+filename)   
+    print('Output data of droplet size distribution written to: Output/'+filename)

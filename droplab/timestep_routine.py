@@ -44,8 +44,15 @@ def timesteps_function(n_particles_widget, P_widget, RH_widget, T_widget, w_widg
     mixing_model = ParameterizedMixing(entrainment_rate, ihmd, qv_profiles, theta_profiles, z_env)
 
     if display_mode == 'graphics':
-        # Initialization of animation
-        figure_item = animation_init(dt, nt,rm_spec, qa_ts, qc_ts, qr_ts, na_ts, nc_ts, nr_ts, T_parcel_array, RH_parcel_array, q_parcel_array, z_parcel_array)
+        # Initialization of animation. The live plotly FigureWidget needs the optional
+        # `anywidget` package; if it is missing, fall back to fast text mode instead of
+        # crashing, so the notebook runs everywhere out of the box.
+        try:
+            figure_item = animation_init(dt, nt,rm_spec, qa_ts, qc_ts, qr_ts, na_ts, nc_ts, nr_ts, T_parcel_array, RH_parcel_array, q_parcel_array, z_parcel_array)
+        except ImportError:
+            print("[display] 'graphics' mode needs `anywidget` (pip install anywidget) — "
+                  "falling back to text mode.")
+            display_mode = 'text_fast'
 
     for t in tqdm(range(nt), desc="LCM timesteps", unit="step"):
         time = (t+1)*dt
