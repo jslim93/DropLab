@@ -18,13 +18,24 @@ def _one_cell(n=60, s=0.01, T=283.0):
     return eta, w, cidx, ss, Tf
 
 
-def test_lem_requires_collisions_off():
-    """LEM is opt-in and (for now) incompatible with collisions: the per-SD state is not
-    threaded through collisional merging. Enabling both must fail loudly, not corrupt."""
+def test_lem_requires_collisions_ice_sediment_off():
+    """LEM is a warm-condensation-only demo: its per-SD supersaturation state is not threaded
+    through collisional merging, ice phase change, or fallout. Enabling ANY of collisions /
+    ice / sediment with lem=True must fail loudly, not silently corrupt."""
     from droplab.flow2d_dynamic import run_flow2d_dynamic
-    with pytest.raises(ValueError, match="collisions"):
-        run_flow2d_dynamic(Nx=16, Nz=16, nt=2, n_super=16 * 16 * 20,
-                           lem=True, collisions=True)
+    common = dict(Nx=16, Nz=16, nt=2, n_super=16 * 16 * 20)
+    for bad in (dict(collisions=True), dict(ice=True), dict(sediment=True)):
+        with pytest.raises(ValueError, match="collisions / ice / sedimentation"):
+            run_flow2d_dynamic(**common, lem=True,
+                               **{"collisions": False, "sediment": False, **bad})
+
+
+def test_lem_runs_with_everything_off():
+    """The valid LEM configuration (collisions/ice/sediment all off) must run without error."""
+    from droplab.flow2d_dynamic import run_flow2d_dynamic
+    out = run_flow2d_dynamic(Nx=16, Nz=16, nt=3, n_super=16 * 16 * 20,
+                             lem=True, collisions=False, sediment=False, ice=False)
+    assert out is not None and "frames" in out
 
 
 def test_init_lem_state_shapes_and_nan():

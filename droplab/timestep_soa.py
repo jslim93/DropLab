@@ -8,7 +8,7 @@ import warnings
 warnings.filterwarnings("ignore")
 import numpy as np
 
-from droplab.parameters import (p0, r_a, cp, rv, l_v, rho_liq, rho_aero, z_env, pi,
+from droplab.parameters import (p0, r_a, cp, rv, l_v, g, rho_liq, rho_aero, z_env, pi,
                               activation_radius_ts, seperation_radius_ts)
 from droplab.aero_init import aero_init
 from droplab.parcel import ascend_parcel, parcel_rho
@@ -56,7 +56,7 @@ def run_soa(seed=0, n_ptcl=2000, nt=1500, dt=1.0, T0=293.2, P0=1013e2, RH=0.92,
             sig=(3.3, 1.6, 2.2), kappa=1.6, ascending_mode="linear",
             collisions=True, collision_mode="lsm", switch_TICE=False,
             eps=0.0, lambda_ent=0.0, ihmd=0.0, init_mode="Random",
-            adaptive_dt=True, collect=None):
+            adaptive_dt=True, collect=None, rh_env=0.2):
     """One full ascent on persistent arrays. Returns (diagnostics_by_time, (M,A)).
 
     Entrainment mixing (warm-cloud, Lim & Hoffmann 2023): with lambda_ent>0 the
@@ -68,10 +68,9 @@ def run_soa(seed=0, n_ptcl=2000, nt=1500, dt=1.0, T0=293.2, P0=1013e2, RH=0.92,
         collect = (nt // 3, 2 * nt // 3, nt)
     mu = np.log(np.array(mu_um) * 1e-6)
     sg = np.log(np.array(sig))
-    th = T0 * (p0 / P0) ** (r_a / cp) + 5e-3 * z_env
+    th = T0 * (p0 / P0) ** (r_a / cp) + 5e-3 * z_env   # env theta sounding (ascend_parcel)
+    th0 = T0 * (p0 / P0) ** (r_a / cp)                 # env theta at the surface (z=0)
     q0 = RH * esatw(T0) / (P0 - RH * esatw(T0)) * r_a / rv
-    # environmental vapor profile (decreases to ~2 g/kg at the top), for entrainment
-    qv_prof = np.maximum(q0 - (q0 - 2e-3) / len(z_env) * np.arange(len(z_env)), 2e-3)
 
     # per-mode hygroscopicity: kappa may be a scalar (all modes) or a per-mode tuple
     if np.isscalar(kappa):
@@ -95,10 +94,14 @@ def run_soa(seed=0, n_ptcl=2000, nt=1500, dt=1.0, T0=293.2, P0=1013e2, RH=0.92,
         z, T, P = ascend_parcel(z, T, P, w, dt, (t + 1) * dt, 3000.0, th, 1200.0, ascending_mode)
         rho_p, _, air_mass = parcel_rho(P, T)
         if lambda_ent > 0.0:
-            # entrainment mixing FIRST (mirror ParameterizedMixing on arrays)
+            # entrainment mixing FIRST (mirror ParameterizedMixing, computed INLINE):
+            # env = theta lapse (5e-3 K/m) + fixed relative humidity rh_env, at parcel P.
             frac = min(lambda_ent * w * dt, 0.999)
-            T_env = float(np.interp(z, z_env, th)) * (P / p0) ** (r_a / cp)
-            q_env = float(np.interp(z, z_env, qv_prof))
+            z_c = min(max(z, float(z_env[0])), float(z_env[-1]))
+            theta_env = th0 + 5e-3 * z_c
+            T_env = theta_env * (P / p0) ** (r_a / cp)
+            es_e = esatw(T_env)
+            q_env = rh_env * (r_a / rv) * es_e / (P - es_e)
             T = T + frac * (T_env - T)
             q = q + frac * (q_env - q)
             m0 = M.sum()

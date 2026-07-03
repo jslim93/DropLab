@@ -37,18 +37,23 @@ def entrainment_input():
     style = {'description_width': 'initial'}
     entrainment_widget = widgets.Checkbox(description='Entrainment', value=False, style=style)
 
-    entrainment_start_widget    = widgets.IntText(description='Entrainment start time (s)', value = 1000, style=style)
-    entrainment_end_widget      = widgets.IntText(description='Entrainment end time (s)', value = 1030, style=style)
-    entrainment_rate_widget     = widgets.FloatText(description=r'Fractional entrainment rate ($ \mathrm{m}^{-1} $)', value = 0.05, style=style, layout={'width': 'max-content'})
+    # WHEN entrainment acts: a start time and a duration (the user sets both).
+    entrainment_start_widget    = widgets.IntText(description='Entrainment start time (s)', value = 600, style=style)
+    entrainment_duration_widget = widgets.IntText(description='Entrainment duration (s)', value = 600, style=style)
+    # HOW STRONG: fractional entrainment rate lambda [1/m]; entrained fraction = lambda*w*dt.
+    # Default 1e-3/m (=1/km) is in the realistic cumulus range (real ~0.2-2/km).
+    entrainment_rate_widget     = widgets.FloatText(description=r'Fractional entrainment rate ($ \mathrm{m}^{-1} $)', value = 0.001, style=style, layout={'width': 'max-content'})
+    # HOW DRY the entrained environmental air is: a fixed relative humidity (0-1).
+    rh_env_widget               = widgets.FloatSlider(min=0.0, max=1.0, step=0.05, value=0.20, description='Environment RH', style=style, layout={'width': 'max-content'})
 
     mixing_degree_widget        = widgets.FloatSlider(min=0.0, max=1.0, step=0.05, value=0.0, description='IHMD', style=style, layout={'width': 'max-content'})
 
     stability_widget = widgets.ToggleButtons(options=['Stable','Unstable', 'Neutral' ], value='Stable', description='Stability', layout={'width': 'max-content'}, disabled=False)
 
     # Display widgets
-    display('Entrainment parameters: ', entrainment_widget, stability_widget, entrainment_start_widget, entrainment_end_widget, entrainment_rate_widget, mixing_degree_widget)
+    display('Entrainment parameters: ', entrainment_widget, stability_widget, entrainment_start_widget, entrainment_duration_widget, entrainment_rate_widget, rh_env_widget, mixing_degree_widget)
 
-    return entrainment_widget, stability_widget, entrainment_start_widget, entrainment_end_widget, entrainment_rate_widget, mixing_degree_widget
+    return entrainment_widget, stability_widget, entrainment_start_widget, entrainment_duration_widget, entrainment_rate_widget, rh_env_widget, mixing_degree_widget
 
 def parcel_info_input():
     style = {'description_width': 'initial'}

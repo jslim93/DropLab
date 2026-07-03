@@ -30,7 +30,7 @@ def main():
     base = dict(Nx=64, Nz=88, X=5000, Z=7000, nt=900, dt=2.0,
                 n_super=64 * 88 * 50, collect_every=75, seed=2,
                 dtheta_bubble=2.0, bubble_z=800.0, bubble_r=900.0,
-                RH0=0.92, z_bl=800.0, collisions=False)
+                RH0=0.92, z_bl=800.0, collisions=False, sediment=False)
     off = run_flow2d_dynamic(**base, lem=False)
     on = run_flow2d_dynamic(**base, lem=True, lem_eps=1e-2)
 

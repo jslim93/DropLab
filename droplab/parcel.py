@@ -64,26 +64,41 @@ def ascend_parcel(z_parcel, T_parcel,P_parcel,w_parcel,dt, time, max_z,theta_pro
     return z_parcel, T_parcel, P_parcel
 
 #Functions to make environmental profiles for three different stability conditions
-def create_env_profiles(T_init, qv_init,z_init,p_env, stability_condition):
-    #Create temperature and vapor content profiles based on initial conditions.
+def create_env_profiles(T_init, qv_init, z_init, p_env, stability_condition, rh_env=0.2):
+    """Environmental profiles the parcel entrains toward.
+
+    Temperature: a potential-temperature lapse set by ``stability_condition``.
+    Moisture: the environment is DRY air at a FIXED relative humidity ``rh_env``
+    (default 0.2 = 20 %), so q_v,env(z) = rh_env * q_sat(T_env(z), P(z)). This makes the
+    entrained air an explicit "20 % RH" choice rather than an opaque linear q_v profile.
+    ``qv_init`` is accepted for signature compatibility but no longer used.
+    """
+    from droplab.condensation import esatw   # local import: robust under notebook %autoreload
     z_env = np.arange(z_init, 3001, 10) # vertical levels up to 3000m
     if stability_condition == 'Stable':
-        lapse_rates = 5 / 1000 # -6.5 K/km converted to K/m
+        lapse_rates = 5 / 1000 # +5 K/km (theta increases -> statically stable)
     elif stability_condition == 'Neutral':
         lapse_rates = 0           # 0 K/km
     elif stability_condition == 'Unstable':
-        lapse_rates = -6.5 / 1000    # 5 K/km converted to K/m
+        lapse_rates = -6.5 / 1000    # -6.5 K/km (theta decreases -> unstable)
     else:
         raise ValueError(f"Unknown stability condition: {stability_condition}")
-        
-    qv_diff = (qv_init - 2*1e-3) / len(z_env)# Create linear qv profile down to 2 g/kg at the boudary layer top
-    
-    qv_profiles = np.maximum(qv_init - qv_diff * np.arange(len(z_env)), 2*1e-3)
-    
+
     theta_init = T_init * ( p0 / p_env )**( r_a / cp )
-    
     theta_profiles = theta_init + lapse_rates * z_env
-        
+
+    # Hydrostatic pressure P(z) from p_env at z_init, integrating d(exner)/dz = -g/(cp*theta)
+    kap = r_a / cp
+    dz = 10.0
+    inv_theta = 1.0 / theta_profiles
+    exner = (p_env / p0) ** kap - g / cp * (np.cumsum(inv_theta) * dz - 0.5 * inv_theta * dz)
+    P_env = p0 * exner ** (1.0 / kap)
+    T_env_profile = theta_profiles * exner
+    # q_v at fixed RH: q_sat = (Rd/Rv) e_s / (P - e_s), then scale by rh_env
+    es = np.array([esatw(t) for t in T_env_profile])
+    qsat = (r_a / rv) * es / (P_env - es)
+    qv_profiles = np.maximum(rh_env * qsat, 0.0)
+
     fig, ax1 = plt.subplots(figsize=(4, 6))
     ax1.plot(theta_profiles, z_env, c="r", lw=3, label=r"$ \Theta $ (K)")
     ax1.set_xlabel(r"$ \Theta $ (K)", color='r')

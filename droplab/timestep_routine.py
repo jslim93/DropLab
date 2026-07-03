@@ -18,7 +18,7 @@ from droplab.mixing import ParameterizedMixing
 from Post_process.analysis import *
 from Post_process.print_plot import *
 
-def timesteps_function(n_particles_widget, P_widget, RH_widget, T_widget, w_widget, nt_widget, dt_widget, rm_spec, ascending_mode_widget, mode_displaytype_widget, z_widget, max_z_widget, Condensation_widget, Collision_widget, mode_aero_init_widget, gridwidget, kohler_activation_radius, switch_kappa_koehler, switch_sedi_removal,entrainment_rate,switch_entrainment,qv_profiles, theta_profiles, entrainment_start, entrainment_end, switch_kelvin=True, switch_solute=True, switch_E_constant=False, switch_vt_simple=False, switch_turb_kernel=False, epsilon_turb=0.0, switch_adaptive_dt=False, ihmd=0.0, switch_breakup=False):
+def timesteps_function(n_particles_widget, P_widget, RH_widget, T_widget, w_widget, nt_widget, dt_widget, rm_spec, ascending_mode_widget, mode_displaytype_widget, z_widget, max_z_widget, Condensation_widget, Collision_widget, mode_aero_init_widget, gridwidget, kohler_activation_radius, switch_kappa_koehler, switch_sedi_removal,entrainment_rate,switch_entrainment,theta_profiles, rh_env, entrainment_start, entrainment_end, switch_kelvin=True, switch_solute=True, switch_E_constant=False, switch_vt_simple=False, switch_turb_kernel=False, epsilon_turb=0.0, switch_adaptive_dt=False, ihmd=0.0, switch_breakup=False):
 
     
     # Function call of the complete model initialization (model_init) (aerosol initialization included)
@@ -38,10 +38,15 @@ def timesteps_function(n_particles_widget, P_widget, RH_widget, T_widget, w_widg
 
     time_array = np.arange(nt+1)*dt
 
-    # Construct the parameterized entrainment-mixing model once before the loop.
-    # z_env (global from droplab.parameters) matches the profiles built by
-    # create_env_profiles (np.arange(z_init, 3001, 10)) for the default z_init=0.
-    mixing_model = ParameterizedMixing(entrainment_rate, ihmd, qv_profiles, theta_profiles, z_env)
+    # Construct the parameterized entrainment-mixing model once before the loop. The
+    # environment is analytic (theta lapse + fixed RH), so we recover theta_init and the
+    # lapse rate from the theta_profiles array (still used by ascend_parcel for the parcel
+    # pressure integration) and pass them to the mixing model, which computes T_env/q_env
+    # inline -- no q_v profile array is threaded through entrainment.
+    _theta_init = float(theta_profiles[0])
+    _lapse = float((theta_profiles[1] - theta_profiles[0]) / (z_env[1] - z_env[0]))
+    mixing_model = ParameterizedMixing(entrainment_rate, ihmd, _theta_init, _lapse, rh_env,
+                                       z_init=float(z_env[0]), z_top=float(z_env[-1]))
 
     if display_mode == 'graphics':
         # Initialization of animation. The live plotly FigureWidget needs the optional

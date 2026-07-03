@@ -330,12 +330,14 @@ def run_flow2d_dynamic(nt=1500, dt=1.5, Nx=96, Nz=72, X=4800.0, Z=3000.0,
     # through collisional merging, which prunes super-droplets -> the arrays would desync.
     # So LEM requires collisions=False for now; the full physics (collision/sedimentation/ice)
     # is the default with lem=False. This keeps LEM from limiting the model.
-    if lem and collisions:
+    if lem and (collisions or ice or sediment):
         raise ValueError(
-            "lem=True is currently incompatible with collisions=True (the per-SD LEM state is "
-            "not threaded through collisional super-droplet merging). Run the LEM with "
-            "collisions=False for the warm-condensation broadening demo, or leave lem=False "
-            "(default) for the full model with collision/sedimentation/ice.")
+            "lem=True is a warm-condensation-only broadening demo and is incompatible with "
+            "collisions / ice / sedimentation: the per-super-droplet LEM supersaturation state "
+            "is not threaded through collisional merging, ice phase change, or fallout removal, "
+            "so combining them would give meaningless results. Run the LEM with "
+            "collisions=False, ice=False, sediment=False, or leave lem=False (default) for the "
+            "full model.")
     np.random.seed(seed)
     seed_numba_rng(seed)
     flow = Flow2D(X=X, Z=Z, Nx=Nx, Nz=Nz)          # geometry holder; u,w overwritten
