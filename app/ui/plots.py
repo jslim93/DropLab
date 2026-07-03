@@ -250,8 +250,15 @@ def _twod_panels(result):
     panels = []
     if has_ice:
         iwp = [float(f["q_ice"].sum()) for f in fr]
-        panels.append(("Water path: Liquid vs ice (∝ Σ g/kg)", [
-            ("liquid q_c", lwp, "#2D6BE0"), ("ice q_i", iwp, "#0FB5C4")], False))
+        # If ice is much smaller than liquid (deep convection: anvil ice ~5% of the
+        # liquid tower), a shared axis squashes the ice line invisibly flat — put it
+        # on a twin axis then. When they are comparable (Arctic WBF hand-off) keep the
+        # shared axis so the liquid-down/ice-up crossover reads directly.
+        disparate = max(lwp) > 0 and max(iwp) < 0.2 * max(lwp)
+        title = ("Water path: Liquid vs ice (ice on right axis)" if disparate
+                 else "Water path: Liquid vs ice (∝ Σ g/kg)")
+        panels.append((title, [
+            ("liquid q_c", lwp, "#2D6BE0"), ("ice q_i", iwp, "#0FB5C4")], disparate))
     else:
         panels.append(("Cloud water LWP (∝ Σ q_c, g/kg)",
                        [("LWP", lwp, "#2D6BE0")], False))

@@ -230,7 +230,7 @@ def _scenario_picker():
     options, labels = [], {}
     for grp in presets.GROUPS:
         for key, meta in presets.SCENARIOS.items():
-            if meta["group"] == grp:
+            if meta["group"] == grp and not meta.get("hidden"):
                 options.append(key)
                 labels[key] = f"{grp} · {meta['label']}"
     return st.selectbox("Scenario (environment)", options,
@@ -290,11 +290,17 @@ def render_twod():
         E_breakdown, charge_eff = 400.0, 0.3
         _bubble = {"idealized", "congestus", "deep_cold", "deep_convection"}
         with st.expander("🌀 Dynamics & advanced"):
-            # wind shear is a general option now (>0 auto-forces periodic walls)
-            wind_shear = st.slider("Wind shear dU/dz (s⁻¹)", 0.0, 6.0e-3, 0.0,
+            # wind shear is a general option now (>0 auto-forces periodic walls).
+            # The slider MAX is depth-aware: U(z)=shear*(z-Z/2) peaks at shear*Z/2, so
+            # the same dU/dz that is mild on a 2-km domain is a ~40 m/s jet on a 12-km
+            # deep domain (unstable even at reduced dt). Cap so U_max <= ~12 m/s.
+            _Z = float(presets.sized_config(scenario, "quick")["Z"])
+            _shear_max = round(min(6.0e-3, 24.0 / _Z), 4)
+            wind_shear = st.slider("Wind shear dU/dz (s⁻¹)", 0.0, _shear_max, 0.0,
                                    5.0e-4, format="%.4f", key=f"twod_shear_{scenario}",
                                    help="Tilts the updraft into bands. Any value >0 "
-                                        "forces periodic side walls.")
+                                        "forces periodic side walls (and, on deep "
+                                        "domains, automatically reduces dt for CFL).")
             if scenario in _bubble:
                 dtheta_bubble = st.slider(
                     "Warm-bubble strength Δθ (K)", 0.5, 5.0,

@@ -171,11 +171,31 @@ def build_twod_config(scenario, resolution, *, collisions, ice, habit,
     if scenario == "deep_convection":
         cfg["dynamics"] = "anelastic"
 
-    # --- coupling 4 (wind_shear > 0 ⇒ periodic_x) ------------------------- #
+    # arctic: stronger initial noise so the (physically gentle, ~0.5-1 m/s) deck
+    # circulation spins up within the first ~15 min instead of looking static.
+    if scenario == "arctic":
+        cfg["pert_amp"] = max(float(cfg.get("pert_amp", 0.1)), 0.25)
+
+    # --- coupling 4 (wind_shear > 0 ⇒ periodic_x + CFL-safe dt) ----------- #
     # set explicitly (incl. 0) so a scenario's baked-in shear can be turned off.
     cfg["wind_shear"] = float(wind_shear or 0.0)
     if cfg["wind_shear"] > 0:
         cfg["periodic_x"] = True
+        # CFL guard: the mean wind U(z)=shear*(z-Z/2) peaks at shear*Z/2, so the same
+        # slider value that is mild on a 2-km domain is a ~40 m/s jet on a 12-km deep
+        # domain — at the deep scenarios' large dt that violates CFL and the run goes
+        # NaN. Cap dt so (U_max + convective-w margin)*dt <= 0.4*min(dx,dz), and
+        # rescale nt to keep the same simulated time.
+        dx = cfg["X"] / cfg["Nx"]
+        dz = cfg["Z"] / cfg["Nz"]
+        u_max = cfg["wind_shear"] * 0.5 * cfg["Z"]
+        w_margin = 15.0 if cfg["Z"] > 8000.0 else 5.0
+        dt_max = 0.4 * min(dx, dz) / (u_max + w_margin)
+        if cfg["dt"] > dt_max:
+            sim_time = cfg["nt"] * cfg["dt"]
+            new_dt = max(0.5, int(dt_max * 4) / 4.0)   # tidy quarter-second steps
+            cfg["dt"] = new_dt
+            cfg["nt"] = max(1, int(round(sim_time / new_dt)))
     if dtheta_bubble is not None and "dtheta_bubble" in cfg:
         cfg["dtheta_bubble"] = float(dtheta_bubble)
 
@@ -200,6 +220,11 @@ _TWOD_ORDER = []
 _TWOD_CAP = 16
 
 
+# Bump when build_twod_config's mapping or the engine physics changes so stale disk
+# entries (e.g. pre-CFL-guard NaN results) can never be served for the same widget args.
+_CFG_VERSION = 2
+
+
 def _twod_key(scenario, resolution, nt, dt, collisions, ice, habit,
               electrification, freezing_mode, homogeneous, melt, hallett_mossop,
               N_modes, mu_um, sig, kappa, seed_on, seed_kind, seed_N, seed_r,
@@ -208,7 +233,7 @@ def _twod_key(scenario, resolution, nt, dt, collisions, ice, habit,
     """A hashable key over the full 2-D config (on_frame excluded)."""
     def _o(x):
         return None if x is None else round(float(x), 6)
-    return (scenario, resolution, int(nt), round(float(dt), 6), bool(collisions),
+    return (_CFG_VERSION, scenario, resolution, int(nt), round(float(dt), 6), bool(collisions),
             bool(ice), bool(habit), bool(electrification), freezing_mode,
             bool(homogeneous), bool(melt), bool(hallett_mossop),
             tuple(float(x) for x in N_modes), tuple(float(x) for x in mu_um),
@@ -275,7 +300,8 @@ def run_twod(scenario, resolution, nt, dt, collisions, ice, habit, electrificati
 
     if not (np.isfinite(out["theta"]).all() and np.isfinite(out["M"]).all()):
         bad = {"unstable": True, "meta": {"scenario": scenario}}
-        _disk_store("twod", key, bad)
+        # in-process only — an unstable result must NOT be persisted to disk, or a
+        # later code/config fix would keep serving the stale NaN from the cache.
         return _twod_store(key, bad)
 
     flow = out["flow"]
@@ -318,9 +344,9 @@ def _clim_key(background_N, ihmd, seed_on, seed_kind, seed_N, seed_r, inject_min
               nt, Nx, Nz, n_super, dt=1.0):
     def _o(x):
         return None if x is None else round(float(x), 6)
-    return (round(float(background_N), 4), round(float(ihmd), 4), bool(seed_on),
-            seed_kind, _o(seed_N), _o(seed_r), _o(inject_min), int(nt), int(Nx),
-            int(Nz), int(n_super), round(float(dt), 6))
+    return (_CFG_VERSION, round(float(background_N), 4), round(float(ihmd), 4),
+            bool(seed_on), seed_kind, _o(seed_N), _o(seed_r), _o(inject_min),
+            int(nt), int(Nx), int(Nz), int(n_super), round(float(dt), 6))
 
 
 def climate_is_cached(*args):
@@ -374,7 +400,7 @@ def run_climate(background_N, ihmd, seed_on, seed_kind, seed_N, seed_r,
     # not render NaN plots/metrics silently.
     if not (np.isfinite(res["theta"]).all() and np.isfinite(res["M"]).all()):
         bad = {"unstable": True}
-        _disk_store("clim", key, bad)
+        # in-process only (see run_twod): never persist NaN results
         return _clim_remember(key, bad)
     flow = res["flow"]
     depth = float(res.get("depth", 1.0))

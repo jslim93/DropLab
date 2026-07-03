@@ -110,7 +110,7 @@ def test_twod_habit_adds_phi():
 
 
 def test_twod_electrification_adds_charge_and_flashes():
-    r = _twod("deep_cold", ice=True, electrification=True)
+    r = _twod("deep_convection", ice=True, electrification=True)
     f = r["frames"][0]
     assert "charge" in f and "charge_density" in f and "flashes" in f
     assert "electric" in [v[0] for v in plots.regime_views(r)]
@@ -139,7 +139,7 @@ def test_coupling_habit_requires_ice():
 
 
 def test_coupling_electrification_requires_ice():
-    cfg = _cfg("deep_cold", ice=False, electrification=True)
+    cfg = _cfg("deep_convection", ice=False, electrification=True)
     assert cfg["ice"] is True and cfg["electrification"] is True
 
 
@@ -184,10 +184,10 @@ def test_ice_capability_rule():
     # shallow-warm scenarios cannot enable ice; congestus + cold/deep can
     for v in presets.SCENARIOS.values():
         assert isinstance(v.get("ice_capable"), bool)
-    for warm in ("bomex", "rico", "dycoms", "fog", "diurnal", "idealized"):
+    for warm in ("bomex", "dycoms", "fog", "diurnal", "idealized"):
         assert presets.SCENARIOS[warm]["ice_capable"] is False
         assert warm not in presets.ICE_CAPABLE
-    for cold in ("congestus", "arctic", "deep_cold", "deep_convection"):
+    for cold in ("arctic", "deep_cold", "deep_convection"):
         assert presets.SCENARIOS[cold]["ice_capable"] is True
         assert cold in presets.ICE_CAPABLE
 
