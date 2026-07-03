@@ -33,3 +33,6 @@ CLAUDE.md
 *.gif
 *.mp4
 flow2d.gif
+
+# README gallery assets are shipped (exception to the global *.gif rule)
+!docs/assets/*.gif

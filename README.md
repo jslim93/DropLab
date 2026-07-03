@@ -14,6 +14,25 @@ It spans a hierarchy of configurations from a rising **parcel** (0-D) to **buoya
 **climate-intervention demonstrations** (marine cloud brightening, glaciogenic seeding) and a
 four-mode browser sandbox for teaching.
 
+<p align="center">
+  <img src="docs/assets/deep_convection.gif" width="85%"
+       alt="Anelastic deep convection with electrification: the cloud scene and its diagnostics computed live">
+  <br><em>Deep convection (anelastic core, ice + electrification on) — the scene and its
+  diagnostics build together, exactly as in the sandbox's live view (quick-look grid).</em>
+</p>
+
+| | |
+| :---: | :---: |
+| ![Parcel droplet-size distribution](docs/assets/parcel_dsd.png) | ![The four-mode browser sandbox](docs/assets/app_home.png) |
+| *0-D parcel: activation → condensational growth → collision tail* | *The browser sandbox: Parcel · 2-D · Climate · Lecture* |
+| ![A single buoyant cumulus](docs/assets/twod_cumulus.png) | ![Marine stratocumulus deck](docs/assets/twod_stratocumulus.png) |
+| *A single buoyant cumulus (warm bubble, 2-D core)* | *DYCOMS marine stratocumulus under cloud-top radiative cooling* |
+| ![Arctic mixed-phase deck: liquid vs ice](docs/assets/twod_mixedphase.png) | |
+| *Arctic mixed-phase deck: supercooled liquid with ice growing by Bergeron* | |
+
+All images are produced by the model itself (`scripts/make_readme_assets.py`, quick-look
+configurations — seconds to a couple of minutes each on a laptop).
+
 > **Honest scope:** DropLab is an *educational and process-exploration* model. Its
 > microphysical kernels are validated against research-grade Fortran references
 > (bit-for-bit where possible — see [Validation](#validation)), but the integrated 2-D

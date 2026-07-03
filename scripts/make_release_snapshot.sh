@@ -30,6 +30,7 @@ rsync -a --delete \
   --exclude 'tests/test_climate_packaging.py' \
   --exclude 'README_STREAMLIT.md' \
   --exclude 'examples/_*.py' \
+  --include 'docs/assets/*.gif' \
   --exclude '_*.png' --exclude 'lightning_*.png' --exclude 'lem_broadening.png' \
   --exclude 'comparison_*.png' \
   --exclude 'output/' --exclude '*.nc' --exclude '*.gif' \
