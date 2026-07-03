@@ -75,7 +75,7 @@ SCENARIOS = {
     # --- Cold & mixed-phase ---
     "arctic":    dict(group="Cold & mixed-phase", case="arctic",
                       label="Arctic mixed-phase deck (MOSAiC)",
-                      blurb="A supercooled-liquid deck slowly glaciating by Bergeron (WBF) — "
+                      blurb="A supercooled-liquid deck slowly glaciating by the Wegener–Bergeron–Findeisen (WBF) process — "
                             "give it time to overturn.",
                       ice_default=True, ice_capable=True, allow_electrify=False,
                       default_min=75, dt_default=1.0),
@@ -182,7 +182,7 @@ DEMOS = [
     dict(key="arctic", title="❄️ Arctic mixed-phase (WBF)", page="2D",
          scenario="arctic",
          toggles=dict(ice=True),
-         pitch="A supercooled liquid deck with a few ice crystals growing by Bergeron."),
+         pitch="A supercooled liquid deck with a few ice crystals growing by the Wegener–Bergeron–Findeisen (WBF) process."),
     dict(key="habit", title="✦ Ice-habit gallery", page="2D",
          scenario="deep_cold",
          toggles=dict(ice=True, habit=True),

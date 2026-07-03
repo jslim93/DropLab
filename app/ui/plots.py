@@ -5,7 +5,7 @@ The 2-D field renders REUSE the proven droplab renderers
 (``flow2d_viz.draw_frame``, ``flow2d_viz.draw_storm_electric``) by passing a
 lightweight flow proxy rebuilt from the cached ``meta`` scalars — so the look
 matches the notebooks and example scripts exactly, and the cache never has to
-pickle a Flow2D object. The crystal-habit gallery and the mixed-phase / Bergeron
+pickle a Flow2D object. The crystal-habit gallery and the mixed-phase / Wegener–Bergeron–Findeisen
 views are adapted from ``examples/_habit_still.py`` and
 ``examples/cloud_cases.py``.
 
@@ -76,7 +76,7 @@ def regime_views(result):
         views.append(("phase", "Liquid vs ice",
                       "The condensate split into supercooled liquid (q_c) and "
                       "ice (q_i). Sedimenting ice is the model's snow."))
-        views.append(("bergeron", "Bergeron hand-off",
+        views.append(("bergeron", "WBF hand-off",
                       "Domain liquid- and ice-water paths over time — supercooled "
                       "liquid converting to ice (the Wegener–Bergeron–Findeisen process)."))
     if "phi" in f0:

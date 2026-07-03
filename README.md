@@ -45,7 +45,7 @@ four-mode browser sandbox for teaching.
 <p align="center">
   <img src="docs/assets/twod_mixedphase.png" width="90%"
        alt="Arctic mixed-phase deck: liquid vs ice">
-  <br><em>Arctic mixed-phase deck: supercooled liquid with ice growing by Bergeron (liquid | ice)</em>
+  <br><em>Arctic mixed-phase deck: supercooled liquid with ice growing by the Wegener–Bergeron–Findeisen (WBF) process (liquid | ice)</em>
 </p>
 
 All images are produced by the model itself (`scripts/make_readme_assets.py`, quick-look
