@@ -13,9 +13,10 @@ SRC="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="${1:-$SRC/../droplab-release}"
 
 mkdir -p "$DEST"
-# NOTE: --filter 'protect .git/' keeps the DEST's git repo — without it, --delete-excluded
-# would remove .git/ (it is an excluded path) and destroy the target repo's history.
-rsync -a --delete --delete-excluded --filter='protect .git/' \
+# Plain --delete (NOT --delete-excluded): it removes dest files missing from the source but
+# LEAVES excluded paths — crucially the dest's own .git/ — untouched, so re-running against a
+# git clone never destroys its history. Excluded files are simply never copied in.
+rsync -a --delete \
   --exclude '__pycache__/' --exclude '*.pyc' --exclude '.pytest_cache/' \
   --exclude '.git/' --exclude '.claude/' --exclude '.streamlit/secrets*' \
   --exclude 'CLAUDE.md' --exclude 'assessment/' \
