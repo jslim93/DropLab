@@ -163,15 +163,12 @@ Read these before interpreting results (§8 of the model paper has the full disc
 
 ## How to cite
 
-> Lim, J. (2026). *DropLab v2.0: an educational Lagrangian laboratory for cloud
-> microphysics — from warm-rain parcels to mixed-phase deep convection and
-> climate-intervention demonstrations.* (Model paper in preparation for JAMES.)
-
-See `CITATION.cff`.
+If you use DropLab, please cite the software via [`CITATION.cff`](CITATION.cff)
+(GitHub's "Cite this repository" button generates the reference automatically).
 
 ## Contact
 
-J.lim@physik.uni-muenchen.de
+Jung-Sub Lim — jung-sub.lim@colorado.edu
 
 ## License
 
