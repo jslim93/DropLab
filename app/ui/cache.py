@@ -370,6 +370,12 @@ def run_climate(background_N, ihmd, seed_on, seed_kind, seed_N, seed_r,
                              n_super=n_super, N_modes=(float(background_N),),
                              ihmd=float(ihmd), seeding=spec, seed=3,
                              on_frame=on_frame, **base)
+    # NaN guard, mirroring run_twod: a blown-up deck must surface as "unstable",
+    # not render NaN plots/metrics silently.
+    if not (np.isfinite(res["theta"]).all() and np.isfinite(res["M"]).all()):
+        bad = {"unstable": True}
+        _disk_store("clim", key, bad)
+        return _clim_remember(key, bad)
     flow = res["flow"]
     depth = float(res.get("depth", 1.0))
     o = column_optics(res["M"], res["A"], res["x"], res["z"], flow)

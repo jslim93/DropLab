@@ -89,7 +89,10 @@ def render_parcel():
         RH = st.slider("Initial RH (fraction)", 0.80, 1.0, 0.92, 0.01)
         w = st.slider("Updraft w (m/s)", 0.1, 5.0, 1.0, 0.1)
         ascending_mode = st.selectbox(
-            "Ascending mode", ["linear", "sine", "in_cloud_oscillation"])
+            "Ascending mode", ["linear", "sine", "in_cloud_oscillation"],
+            help="linear: steady updraft. sine: the whole ascent oscillates (parcel "
+                 "rises and sinks). in_cloud_oscillation: rises, then bobs up and "
+                 "down inside the cloud — repeated activation/evaporation cycles.")
 
         st.subheader("Aerosol")
         preset = st.selectbox("Preset (quick-fill)", list(presets.AEROSOL_PRESETS),
@@ -97,6 +100,10 @@ def render_parcel():
                                    "continental: many small CCN → suppressed rain. "
                                    "arctic: ultra-clean. Edit the modes below to "
                                    "tweak from the preset.")
+        compare_preset = st.selectbox(
+            "Compare with (overlay)", ["(none)"] + list(presets.AEROSOL_PRESETS),
+            help="Overlay a second preset on the time series and profiles — e.g. "
+                 "maritime vs continental shows aerosol suppressing rain directly.")
         p = presets.AEROSOL_PRESETS[preset]
         kappa_pre = float(p["kappa"]) if np.isscalar(p["kappa"]) else float(p["kappa"][0])
         use_edit = st.checkbox("✎ Edit aerosol modes", value=False,
@@ -172,13 +179,28 @@ def render_parcel():
 
     last = out[sorted(out)[-1]]
     m = st.columns(5)
-    m[0].metric("Nc (cm⁻³)", f"{last['NC']:.1f}")
-    m[1].metric("Nr (cm⁻³)", f"{last['NR']:.3f}")
+    m[0].metric("N_c (cm⁻³)", f"{last['NC']:.1f}",
+                help="Cloud-droplet number concentration at the end of the ascent.")
+    m[1].metric("N_r (cm⁻³)", f"{last['NR']:.3f}",
+                help="Raindrop number concentration — nonzero means collisions "
+                     "made rain.")
     m[2].metric("Mean radius (µm)", f"{last['rv']:.2f}")
-    m[3].metric("LWC q_c+q_r (g/kg)", f"{last['qc'] + last['qr']:.3f}")
+    m[3].metric("LWC q_c+q_r (g/kg)", f"{last['qc'] + last['qr']:.3f}",
+                help="Liquid water content: cloud + rain mixing ratio.")
     m[4].metric("Supersaturation (%)", f"{(last['RH'] - 1) * 100:+.3f}")
 
     runs = [(preset, out, M, A)]
+    if compare_preset != "(none)" and compare_preset != preset:
+        cp = presets.AEROSOL_PRESETS[compare_preset]
+        with st.spinner(f"Running the {compare_preset} overlay…"):
+            out2, M2, A2 = cache.run_parcel(
+                0, n_ptcl, nt, dt, T0, P0, RH, w, ascending_mode,
+                tuple(float(x) for x in cp["N_raw"]),
+                tuple(float(x) for x in cp["mu_um"]),
+                tuple(float(x) for x in cp["sig"]),
+                float(cp["kappa"]) if np.isscalar(cp["kappa"]) else tuple(cp["kappa"]),
+                collisions, switch_TICE, eps, lambda_ent, ihmd)
+        runs.append((compare_preset, out2, M2, A2))
     tabs = st.tabs(["Time series", "DSD", "Particle population", "Vertical profiles"])
     with tabs[0]:
         theme.whatami("Six-panel parcel evolution: humidity, vapour, height, "
@@ -309,12 +331,17 @@ def render_twod():
         wind = st.radio("Wind overlay", ["off", "streamlines", "arrows"],
                         horizontal=True)
         run = st.button("▶ Run cloud", type="primary", use_container_width=True)
+        st.caption("quick ≈ 15–30 s live, full ≈ 1–3 min. Repeats of the same "
+                   "settings are cached and instant.")
 
     if run or st.session_state.pop("twod_autorun", False):
         st.session_state["twod_active"] = True
     if not st.session_state.get("twod_active"):
         st.info("Pick a scenario and microphysics on the left, then press "
                 "**▶ Run cloud** — or open a curated demo from Home.")
+        # scenario teaser: tell the user what THIS pick will show before they commit
+        st.markdown(f"#### {smeta['label']}")
+        st.markdown(smeta["blurb"])
         return
 
     twod_args = (
@@ -336,6 +363,7 @@ def render_twod():
         live = st.empty()
         bar = st.progress(0.0, text="starting…")
         qmax = [0.5]
+        _draw_fails = [0]
 
         def _cb(step, total, frame, flow):
             try:
@@ -344,10 +372,18 @@ def render_twod():
                                            show_field, wind, qmax[0])
                 live.pyplot(fig, clear_figure=True)
                 plots.close(fig)      # clear_figure clears but doesn't free it
+            except Exception:
+                # a draw hiccup must never abort the physics run — but if drawing
+                # is SYSTEMATICALLY broken, say so instead of looking frozen
+                _draw_fails[0] += 1
+                if _draw_fails[0] == 3:
+                    live.caption("Live preview unavailable — the simulation is "
+                                 "still computing in the background.")
+            try:
                 bar.progress(min(1.0, step / max(1, total)),
                              text=f"step {step} / {total}")
             except Exception:
-                pass  # a draw hiccup must never abort the physics run
+                pass
 
         result = cache.run_twod(*twod_args, on_frame=_cb)
         bar.empty()
@@ -365,14 +401,21 @@ def render_twod():
 def _render_twod_result(result, show_field, wind):
     met = result["metrics"]
     cols = st.columns(5)
-    cols[0].metric("Peak cloud water", f"{result['qc_max']:.2f} g/kg")
-    cols[1].metric("Cloud fraction", f"{met['cloud_fraction']:.0%}")
-    cols[2].metric("Effective radius", f"{met['reff_um']:.1f} µm")
-    cols[3].metric("Cloud albedo", f"{met['albedo']:.2f}")
+    cols[0].metric("Peak cloud water", f"{result['qc_max']:.2f} g/kg",
+                   help="Densest liquid anywhere in the scene.")
+    cols[1].metric("Cloud fraction", f"{met['cloud_fraction']:.0%}",
+                   help="Share of the domain that is cloudy.")
+    cols[2].metric("Effective radius", f"{met['reff_um']:.1f} µm",
+                   help="Optics-weighted mean droplet size — smaller drops make a "
+                        "brighter cloud.")
+    cols[3].metric("Cloud albedo", f"{met['albedo']:.2f}",
+                   help="Fraction of sunlight reflected — higher = brighter/cooler.")
     if result["meta"].get("electrification"):
-        cols[4].metric("Lightning flashes", f"{result['n_flashes']}")
+        cols[4].metric("Lightning flashes", f"{result['n_flashes']}",
+                       help="Discharges fired this run (illustrative model).")
     else:
-        cols[4].metric("Surface rain", f"{result['surf_precip']:.2e} kg")
+        cols[4].metric("Surface rain", f"{result['surf_precip']:.2e} kg",
+                       help="Liquid that fell out of the domain.")
 
     views = plots.regime_views(result)
     tab_titles = [t for _, t, _ in views]
@@ -434,7 +477,10 @@ def render_climate():
                                  200.0, 10.0,
                                  help="Clean marine ~20; polluted ~400.")
         st.subheader("2 · Entrainment mixing")
-        ihmd = st.slider("Inhomogeneous mixing degree (IHMD)", 0.0, 1.0, 0.0, 0.1)
+        ihmd = st.slider("Inhomogeneous mixing degree (IHMD)", 0.0, 1.0, 0.0, 0.1,
+                         help="How dry-air mixing removes droplets. 0 = every droplet "
+                              "shrinks a little (number kept); 1 = whole droplets "
+                              "evaporate (number drops, survivors keep their size).")
         st.subheader("3 · Deliberate seeding")
         seed_on = st.checkbox("Seed the cloud", value=True)
         seed_kind = st.selectbox("Strategy", controls.SEED_KINDS,
@@ -460,21 +506,17 @@ def render_climate():
                               help="Runs a second unseeded deck: TOA forcing plus a "
                                    "dotted control baseline on every graph.")
         run = st.button("▶ Run deck", type="primary", use_container_width=True)
+        st.caption("First run computes live — roughly ½–1 min for the deck, doubled "
+                   "with the control twin. Repeats are cached and instant.")
 
     Nx, Nz, n_super = 64, 40, 30000
     if not run:
         st.info("Set the controls on the left, then press **▶ Run deck**.")
         return
 
-    # control (unseeded) twin first — quiet — so its baseline is ready for the
-    # seeded run's synced animation and the dotted comparison on every graph.
-    twin = None
-    if seed_on and compare:
-        with st.spinner("Running the unseeded control deck…"):
-            twin = cache.run_climate(background_N, ihmd, False, seed_kind, seed_N,
-                                     seed_r, inject_min, nt, Nx, Nz, n_super)
-    ctrl_ts = twin["ts"] if twin is not None else None
-
+    # SEEDED deck first, streaming live, so the user sees frames immediately;
+    # the quiet control twin runs afterwards (its baseline is only needed by the
+    # comparison overlays, which all render later anyway).
     clim_args = (background_N, ihmd, seed_on, seed_kind, seed_N, seed_r,
                  inject_min, nt, Nx, Nz, n_super)
     if cache.climate_is_cached(*clim_args):
@@ -484,6 +526,7 @@ def render_climate():
                    "is cached and loops.")
         live = st.empty()
         bar = st.progress(0.0, text="starting…")
+        _draw_fails = [0]
 
         def _cb(step, total, frame, flow):
             try:
@@ -491,6 +534,14 @@ def render_climate():
                                            max(0.3, float(frame["qc"].max())))
                 live.pyplot(fig, clear_figure=True)
                 plots.close(fig)      # clear_figure clears but doesn't free it
+            except Exception:
+                # protect the physics run from a draw hiccup — but if drawing is
+                # SYSTEMATICALLY broken, say so instead of looking frozen.
+                _draw_fails[0] += 1
+                if _draw_fails[0] == 3:
+                    live.caption("Live preview unavailable — the simulation is "
+                                 "still computing in the background.")
+            try:
                 bar.progress(min(1.0, step / max(1, total)),
                              text=f"step {step} / {total}")
             except Exception:
@@ -499,6 +550,30 @@ def render_climate():
         out = cache.run_climate(*clim_args, on_frame=_cb)
         bar.empty()
         live.empty()
+
+    if out.get("unstable"):
+        st.error("⚠️ This deck went **numerically unstable** (NaN). Try fewer "
+                 "seed particles, a weaker background change, or the default "
+                 "run length.")
+        return
+
+    # control (unseeded) twin AFTER the seeded run — the user has already seen the
+    # live frames, so this wait is contextualized (and skipped when cached).
+    twin = None
+    if seed_on and compare:
+        ctrl_args = (background_N, ihmd, False, seed_kind, seed_N, seed_r,
+                     inject_min, nt, Nx, Nz, n_super)
+        if cache.climate_is_cached(*ctrl_args):
+            twin = cache.run_climate(*ctrl_args)
+        else:
+            with st.spinner("Running the unseeded control twin (for the dotted "
+                            "baseline and the forcing estimate)…"):
+                twin = cache.run_climate(*ctrl_args)
+        if twin.get("unstable"):
+            st.warning("The unseeded control twin went unstable — showing the "
+                       "seeded run without the comparison overlay.")
+            twin = None
+    ctrl_ts = twin["ts"] if twin is not None else None
 
     # FULL-WIDTH result (the combined scene+graphs image is wide — don't squeeze it
     # into a narrow column), with the headline metrics in a row underneath.
@@ -520,7 +595,9 @@ def render_climate():
     st.subheader("What the cloud did")
     m = st.columns(4)
     m[0].metric("Effective radius", f"{out['reff_um']:.1f} µm", help="Smaller → brighter.")
-    m[1].metric("Cloud albedo", f"{out['albedo']:.2f}")
+    m[1].metric("Cloud albedo", f"{out['albedo']:.2f}",
+                help="Fraction of sunlight the deck reflects — higher = brighter "
+                     "= more cooling.")
     m[2].metric("Surface rain", f"{out['precip_kg']:.2e} kg")
     m[3].metric("Droplet number ΣA", f"{out['droplet_number']:.1e}")
     if twin is not None:
@@ -588,8 +665,18 @@ def render_lecture():
                  "step through the fixed scenario.", accent=theme.MODE_ACCENT["lecture"])
 
     # curriculum order (EDU_FRAMEWORK §4): warm parcel 5 → mixed-phase 4 → showcase 4
-    _all = list(_LESSONS) + list(_showcase.ALL_LESSONS)
-    lesson = st.sidebar.selectbox("Lesson", _all)
+    # group the flat lesson list so students see the intended progression
+    _warm = list(_LESSONS)
+    _mixed = [k for k in _showcase.ALL_LESSONS if k.split(" ")[0].startswith("I")]
+    _show = [k for k in _showcase.ALL_LESSONS if k not in _mixed]
+    _group = {**{k: "Warm parcel" for k in _warm},
+              **{k: "Mixed-phase" for k in _mixed},
+              **{k: "Showcase" for k in _show}}
+    _all = _warm + _mixed + _show
+    lesson = st.sidebar.selectbox(
+        "Lesson", _all, format_func=lambda k: f"{_group[k]} · {k}",
+        help="Warm parcel 1-5 build the fundamentals; Mixed-phase I1-I4 add ice; "
+             "Showcase lessons tour the headline 2-D phenomena.")
     if lesson in _showcase.ALL_LESSONS:
         _showcase.render_showcase(lesson)
         return
