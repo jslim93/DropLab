@@ -663,20 +663,30 @@ def parcel_timeseries(runs, dt):
 
 def parcel_dsd_contour(out, dt):
     ts, radii, stack, rv = _dsd_stack(out)
-    tsec = ts * dt
+    tmin = ts * dt / 60.0
     z = stack.T.copy()
     z[z <= 0] = np.nan
     fig = go.Figure()
     fig.add_trace(go.Heatmap(
-        x=tsec, y=radii, z=np.log10(z), colorscale=VIRIDIS,
+        x=tmin, y=radii, z=np.log10(z), colorscale=VIRIDIS,
         colorbar=dict(title="log₁₀ dN<br>(cm⁻³)"),
-        hovertemplate="t=%{x:.0f}s<br>r=%{y:.2f}µm<br>log₁₀dN=%{z:.2f}<extra></extra>"))
-    fig.add_trace(go.Scatter(x=tsec, y=rv, mode="lines",
+        hovertemplate="t=%{x:.1f} min<br>r=%{y:.2f} µm<br>log₁₀dN=%{z:.2f}<extra></extra>"))
+    fig.add_trace(go.Scatter(x=tmin, y=rv, mode="lines",
                              line=dict(color="#0c1626", width=2.5),
-                             name="mean radius r̄ (µm)"))
+                             name="mean droplet radius r̄"))
+    # physical regime boundaries: the SAME thresholds the model's diagnostics use
+    for r_line, label in ((1.0, "activation (1 µm): aerosol → cloud"),
+                          (25.0, "separation (25 µm): cloud → rain")):
+        fig.add_hline(y=r_line, line=dict(color="#94a3b8", width=1, dash="dash"))
+        fig.add_annotation(x=1.0, xref="paper", y=np.log10(r_line), yref="y",
+                           text=label, showarrow=False, xanchor="right",
+                           yanchor="bottom", font=dict(size=11, color="#64748b"),
+                           bgcolor="rgba(255,255,255,0.65)")
     fig.update_yaxes(type="log", title_text="Radius r (µm)")
-    fig.update_xaxes(title_text="Time (s)")
-    fig.update_layout(height=520, title="DSD time evolution",
+    fig.update_xaxes(title_text="Time (min)")
+    fig.update_layout(height=520,
+                      title="Droplet-size distribution vs time — watch aerosol "
+                            "activate, grow, and cross into rain",
                       legend=dict(orientation="h", y=1.05))
     return fig
 
@@ -687,20 +697,28 @@ def parcel_dsd_spectra(out, dt):
     z[z <= 0] = np.nan
     n = len(ts)
     fig = go.Figure()
-    idx = np.linspace(0, n - 1, min(12, n)).astype(int)
+    # regime bands first (background): aerosol | cloud | rain
+    fig.add_vrect(x0=radii.min(), x1=1.0, fillcolor="#f1f5f9", opacity=0.5, line_width=0)
+    fig.add_vrect(x0=25.0, x1=radii.max(), fillcolor="#eef4ff", opacity=0.5, line_width=0)
+    for x, lab in ((0.3, "aerosol"), (5.0, "cloud droplets"), (120.0, "rain")):
+        fig.add_annotation(x=np.log10(x), xref="x", y=1.0, yref="paper", text=lab,
+                           showarrow=False, yanchor="bottom",
+                           font=dict(size=11, color="#64748b"))
+    idx = np.linspace(0, n - 1, min(8, n)).astype(int)
     for i in idx:
         frac = i / max(1, n - 1)
         fig.add_trace(go.Scatter(
-            x=radii, y=z[i], mode="lines", line=dict(color=_viridis_at(frac)),
-            name=f"t={ts[i] * dt:.0f}s", showlegend=False,
-            hovertemplate="r=%{x:.2f}µm<br>dN=%{y:.3g}<extra></extra>"))
-    fig.add_trace(go.Scatter(
-        x=[None], y=[None], mode="markers",
-        marker=dict(colorscale=VIRIDIS, cmin=0, cmax=ts[-1] * dt, color=[0],
-                    colorbar=dict(title="Time (s)")), showlegend=False))
+            x=radii, y=z[i], mode="lines",
+            line=dict(color=_viridis_at(frac), width=2.2),
+            name=f"t = {ts[i] * dt / 60.0:.0f} min",
+            hovertemplate="r=%{x:.2f} µm<br>dN=%{y:.3g} cm⁻³<extra></extra>"))
     fig.update_xaxes(type="log", title_text="Radius r (µm)")
     fig.update_yaxes(type="log", title_text="dN (cm⁻³)")
-    fig.update_layout(height=520, title="DSD spectra coloured by time")
+    fig.update_layout(height=520,
+                      title="Size spectra through the ascent — narrowing by "
+                            "condensation, then a collision tail",
+                      legend=dict(orientation="v", x=1.02, y=1.0,
+                                  title=dict(text="snapshot")))
     return fig
 
 

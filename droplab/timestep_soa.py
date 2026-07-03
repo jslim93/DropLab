@@ -56,7 +56,8 @@ def run_soa(seed=0, n_ptcl=2000, nt=1500, dt=1.0, T0=293.2, P0=1013e2, RH=0.92,
             sig=(3.3, 1.6, 2.2), kappa=1.6, ascending_mode="linear",
             collisions=True, collision_mode="lsm", switch_TICE=False,
             eps=0.0, lambda_ent=0.0, ihmd=0.0, init_mode="Random",
-            adaptive_dt=True, collect=None, rh_env=0.2):
+            adaptive_dt=True, collect=None, rh_env=0.2,
+            ent_start=0.0, ent_duration=None):
     """One full ascent on persistent arrays. Returns (diagnostics_by_time, (M,A)).
 
     Entrainment mixing (warm-cloud, Lim & Hoffmann 2023): with lambda_ent>0 the
@@ -93,7 +94,10 @@ def run_soa(seed=0, n_ptcl=2000, nt=1500, dt=1.0, T0=293.2, P0=1013e2, RH=0.92,
     for t in range(nt):
         z, T, P = ascend_parcel(z, T, P, w, dt, (t + 1) * dt, 3000.0, th, 1200.0, ascending_mode)
         rho_p, _, air_mass = parcel_rho(P, T)
-        if lambda_ent > 0.0:
+        _t_now = (t + 1) * dt
+        _ent_on = (lambda_ent > 0.0 and _t_now >= ent_start
+                   and (ent_duration is None or _t_now < ent_start + ent_duration))
+        if _ent_on:
             # entrainment mixing FIRST (mirror ParameterizedMixing, computed INLINE):
             # env = theta lapse (5e-3 K/m) + fixed relative humidity rh_env, at parcel P.
             frac = min(lambda_ent * w * dt, 0.999)

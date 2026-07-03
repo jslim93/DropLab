@@ -83,6 +83,20 @@ def render_parcel():
                  accent=theme.MODE_ACCENT["parcel"])
 
     with st.sidebar:
+        # Numerics FIRST and visible — resolution/duration are among the most important
+        # choices (accuracy vs speed), not something to bury in an expander.
+        st.subheader("Numerics")
+        n_ptcl = int(st.number_input(
+            "Super-droplets", 500, 20000, 2000, 500,
+            help="How many simulated particles represent the population. More = "
+                 "smoother spectra and less Monte-Carlo noise, but slower."))
+        sim_min = st.slider("Simulated time (min)", 5, 60, 25, 5,
+                            help="How long the parcel ascends.")
+        dt = float(st.number_input("Time step dt (s)", 0.25, 5.0, 1.0, 0.25,
+                                   help="Physics step. Smaller = more accurate "
+                                        "condensation, slower run."))
+        nt = max(1, int(round(sim_min * 60.0 / dt)))
+
         st.subheader("Parcel")
         T0 = st.slider("Initial T₀ (K)", 273.0, 303.0, 293.2, 0.1)
         P0 = st.slider("Initial P₀ (hPa)", 700.0, 1030.0, 1013.0, 1.0) * 100.0
@@ -159,23 +173,46 @@ def render_parcel():
                                   help="Wang–Ayala turbulent collision kernel.")
         eps = (st.number_input("ε (m²/s³)", 0.0, 0.5, 0.01, 0.01)
                if switch_TICE else 0.0)
-        lambda_ent = st.slider("Entrainment λ", 0.0, 2e-3, 0.0, 1e-4, format="%.4f",
-                               help="Mixes in dry air, evaporating cloud water.")
+
+        st.subheader("Entrainment")
+        ent_on = st.checkbox("Entrain environmental air", False,
+                             help="Mix in outside air during a chosen window of the "
+                                  "ascent — dries the parcel and evaporates cloud water.")
+        lambda_ent = st.slider("Strength λ (m⁻¹)", 1e-4, 2e-3, 5e-4, 1e-4,
+                               format="%.4f", disabled=not ent_on,
+                               help="Fraction of the parcel replaced per metre risen "
+                                    "(λ·w·dt per step). Realistic cumulus ~0.0002–0.002.")
+        rh_env = st.slider("Environment RH", 0.0, 1.0, 0.2, 0.05, disabled=not ent_on,
+                           help="How DRY the entrained air is. 20% = very dry free "
+                                "troposphere; higher RH entrains gentler air.")
+        c1, c2 = st.columns(2)
+        ent_start_min = c1.number_input("Starts at (min)", 0.0, float(sim_min),
+                                        min(5.0, float(sim_min)), 1.0,
+                                        disabled=not ent_on)
+        ent_dur_min = c2.number_input("Lasts (min)", 1.0, float(sim_min),
+                                      min(10.0, float(sim_min)), 1.0,
+                                      disabled=not ent_on)
         ihmd = st.slider("IHMD (mixing degree)", 0.0, 1.0, 0.5, 0.1,
-                         help="0 homogeneous (droplets shrink, number kept); "
-                              "1 inhomogeneous (whole droplets evaporate).")
+                         disabled=not ent_on,
+                         help="0 homogeneous (every droplet shrinks, number kept); "
+                              "1 inhomogeneous (whole droplets evaporate, survivors "
+                              "keep their size).")
+        if ent_on:
+            from droplab.mixing import entrained_fraction
+            _ef = entrained_fraction(lambda_ent, w, dt, ent_dur_min * 60.0)
+            st.caption(f"≈ {_ef*100:.0f}% of the parcel replaced by {rh_env*100:.0f}%-RH "
+                       f"air between min {ent_start_min:g} and "
+                       f"{ent_start_min + ent_dur_min:g}.")
 
-        with st.expander("Numerics"):
-            nt = int(st.number_input("Steps (nt)", 300, 3600, 1500, 100))
-            dt = float(st.number_input("dt (s)", 0.25, 5.0, 1.0, 0.25))
-            n_ptcl = int(st.number_input("Super-droplets", 500, 20000, 2000, 500))
-
+    _lam = lambda_ent if ent_on else 0.0
     with st.spinner("Running parcel ascent…"):
         out, M, A = cache.run_parcel(
             0, n_ptcl, nt, dt, T0, P0, RH, w, ascending_mode,
             tuple(N_raw), tuple(mu_um), tuple(sig),
             kappa if np.isscalar(kappa) else tuple(kappa),
-            collisions, switch_TICE, eps, lambda_ent, ihmd)
+            collisions, switch_TICE, eps, _lam, ihmd,
+            rh_env=rh_env, ent_start=ent_start_min * 60.0,
+            ent_duration=ent_dur_min * 60.0)
 
     last = out[sorted(out)[-1]]
     m = st.columns(5)
@@ -199,7 +236,9 @@ def render_parcel():
                 tuple(float(x) for x in cp["mu_um"]),
                 tuple(float(x) for x in cp["sig"]),
                 float(cp["kappa"]) if np.isscalar(cp["kappa"]) else tuple(cp["kappa"]),
-                collisions, switch_TICE, eps, lambda_ent, ihmd)
+                collisions, switch_TICE, eps, _lam, ihmd,
+                rh_env=rh_env, ent_start=ent_start_min * 60.0,
+                ent_duration=ent_dur_min * 60.0)
         runs.append((compare_preset, out2, M2, A2))
     tabs = st.tabs(["Time series", "DSD", "Particle population", "Vertical profiles"])
     with tabs[0]:

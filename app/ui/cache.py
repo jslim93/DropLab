@@ -105,9 +105,12 @@ def _disk_store(prefix: str, key, payload: dict):
 @st.cache_data(show_spinner=False)
 def run_parcel(seed, n_ptcl, nt, dt, T0, P0, RH, w, ascending_mode,
                N_raw, mu_um, sig, kappa, collisions, switch_TICE, eps,
-               lambda_ent, ihmd, n_collect=120):
+               lambda_ent, ihmd, n_collect=120,
+               rh_env=0.2, ent_start=0.0, ent_duration=None):
     """Cached warm-parcel run. Tuple args stay tuples (hashable). Returns the
-    dense time-sampled diagnostics dict plus the final (M, A) arrays."""
+    dense time-sampled diagnostics dict plus the final (M, A) arrays.
+    Entrainment: lambda_ent (strength), rh_env (how dry the entrained air is),
+    ent_start/ent_duration in SECONDS (duration None = the whole ascent)."""
     step = max(1, nt // n_collect)
     collect = tuple(range(step, nt + 1, step))
     out, (M, A) = run_soa(
@@ -115,7 +118,8 @@ def run_parcel(seed, n_ptcl, nt, dt, T0, P0, RH, w, ascending_mode,
         N_raw=N_raw, mu_um=mu_um, sig=sig, kappa=kappa,
         ascending_mode=ascending_mode, collisions=collisions,
         switch_TICE=switch_TICE, eps=eps, lambda_ent=lambda_ent, ihmd=ihmd,
-        collect=collect)
+        collect=collect, rh_env=rh_env, ent_start=ent_start,
+        ent_duration=ent_duration)
     return out, np.asarray(M), np.asarray(A)
 
 

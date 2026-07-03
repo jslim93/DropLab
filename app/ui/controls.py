@@ -104,10 +104,10 @@ def microphysics_panel(scenario: str, key: str, *, ice0=False, habit0=False,
     ice_capable = presets.SCENARIOS[scenario].get("ice_capable", True)
     with st.expander("🧪 Microphysics", expanded=True):
         collisions = st.checkbox("Collision–coalescence (warm rain)", True,
-                                 key=f"{key}_coll",
+                                 key=f"{key}_{scenario}_coll",
                                  help="Larger drops collect smaller ones → drizzle/rain.")
         ice = st.checkbox("Ice / mixed-phase", value=(ice0 and ice_capable),
-                          disabled=not ice_capable, key=f"{key}_ice",
+                          disabled=not ice_capable, key=f"{key}_{scenario}_ice",
                           help="Freezing, depositional growth, melting and snow.")
         # a disabled checkbox retains its stored session value → force off on warm
         ice = bool(ice and ice_capable)
@@ -117,7 +117,7 @@ def microphysics_panel(scenario: str, key: str, *, ice0=False, habit0=False,
         # coupling 1: habit ⇒ ice
         habit = st.checkbox("Ice habit (crystal shapes)",
                             value=(habit0 and ice), disabled=not ice,
-                            key=f"{key}_habit",
+                            key=f"{key}_{scenario}_habit",
                             help="Predicts plate↔column crystal shapes (needs ice on).")
         habit = bool(habit and ice)   # don't let a stale disabled value leak through
         if not ice:
@@ -128,7 +128,7 @@ def microphysics_panel(scenario: str, key: str, *, ice0=False, habit0=False,
         electrification = st.checkbox(
             "Electrification + lightning",
             value=(electrify0 and ice and can_electrify),
-            disabled=elec_disabled, key=f"{key}_elec",
+            disabled=elec_disabled, key=f"{key}_{scenario}_elec",
             help="Charge separation by riming → a dielectric-breakdown bolt.")
         electrification = bool(electrification and ice and can_electrify)
         if not can_electrify:
