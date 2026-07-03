@@ -21,14 +21,32 @@ four-mode browser sandbox for teaching.
   diagnostics build together, exactly as in the sandbox's live view (quick-look grid).</em>
 </p>
 
-| | |
-| :---: | :---: |
-| ![Parcel droplet-size distribution](docs/assets/parcel_dsd.png) | ![The four-mode browser sandbox](docs/assets/app_home.png) |
-| *0-D parcel: activation → condensational growth → collision tail* | *The browser sandbox: Parcel · 2-D · Climate · Lecture* |
-| ![A single buoyant cumulus](docs/assets/twod_cumulus.png) | ![Marine stratocumulus deck](docs/assets/twod_stratocumulus.png) |
-| *A single buoyant cumulus (warm bubble, 2-D core)* | *DYCOMS marine stratocumulus under cloud-top radiative cooling* |
-| ![Arctic mixed-phase deck: liquid vs ice](docs/assets/twod_mixedphase.png) | |
-| *Arctic mixed-phase deck: supercooled liquid with ice growing by Bergeron* | |
+<p align="center">
+  <img src="docs/assets/app_home.png" width="85%" alt="The four-mode browser sandbox">
+  <br><em>The browser sandbox — Parcel · 2-D · Climate · Lecture</em>
+</p>
+
+<p align="center">
+  <img src="docs/assets/parcel_dsd.png" width="80%"
+       alt="Parcel droplet-size-distribution evolution">
+  <br><em>0-D parcel: activation → condensational growth → the collision tail toward rain</em>
+</p>
+
+<p align="center">
+  <img src="docs/assets/twod_cumulus.png" width="80%" alt="A single buoyant cumulus">
+  <br><em>A single buoyant cumulus (warm bubble, 2-D dynamical core)</em>
+</p>
+
+<p align="center">
+  <img src="docs/assets/twod_stratocumulus.png" width="80%" alt="Marine stratocumulus deck">
+  <br><em>DYCOMS marine stratocumulus under cloud-top radiative cooling</em>
+</p>
+
+<p align="center">
+  <img src="docs/assets/twod_mixedphase.png" width="90%"
+       alt="Arctic mixed-phase deck: liquid vs ice">
+  <br><em>Arctic mixed-phase deck: supercooled liquid with ice growing by Bergeron (liquid | ice)</em>
+</p>
 
 All images are produced by the model itself (`scripts/make_readme_assets.py`, quick-look
 configurations — seconds to a couple of minutes each on a laptop).
