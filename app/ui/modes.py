@@ -504,12 +504,23 @@ def _render_twod_result(result, show_field, wind):
                              caption="Cloud scene + key variables building together, "
                                      "in sync (loops from frame 0).")
                 else:
-                    st.image(plots.scene_image(result, show_field, wind),
+                    # frozen mode = a frame SCRUBBER: step through the run by hand
+                    frames = result["frames"]
+                    n_fr = len(frames)
+                    dt_m = result["meta"]["dt"]
+                    k = st.slider("Frame", 0, n_fr - 1, n_fr - 1, 1,
+                                  key="twod_frame",
+                                  help="Drag to move through the run frame by frame.")
+                    t_k = frames[k]["step"] * dt_m
+                    st.image(plots.scene_image(result, show_field, wind,
+                                               frame_idx=k),
                              use_container_width=True,
-                             caption="Final frame (frozen).")
+                             caption=f"Frame {k + 1}/{n_fr} — t = {t_k / 60:.1f} min.")
                     st.markdown("**Key variables over time**")
-                    st.plotly_chart(plots.twod_timeseries(result),
-                                    use_container_width=True)
+                    fig_ts = plots.twod_timeseries(result)
+                    fig_ts.add_vline(x=t_k, line=dict(color="#E8743B", width=1.5,
+                                                      dash="dot"))
+                    st.plotly_chart(fig_ts, use_container_width=True)
             elif key == "phase":
                 st.image(plots.phase_image(result), use_container_width=True)
             elif key == "bergeron":

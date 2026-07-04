@@ -127,12 +127,15 @@ def close(fig):
     plt.close(fig)
 
 
-def scene_image(result, show_field=True, wind="off"):
-    """Static final-frame cloud scene."""
+def scene_image(result, show_field=True, wind="off", frame_idx=None):
+    """Static cloud scene — the final frame by default, or ``frame_idx`` for the
+    frozen-mode scrubber. The colour scale always comes from the FULL run so the
+    scene does not re-normalize while scrubbing."""
     meta = result["meta"]
     flow = flow_proxy(meta)
     fig, ax = plt.subplots(figsize=(9, 4.7))
-    _draw_scene(ax, flow, result["frames"][-1], _vis_vmax(result),
+    _fr = result["frames"][-1 if frame_idx is None else frame_idx]
+    _draw_scene(ax, flow, _fr, _vis_vmax(result),
                 _r_max(meta["scenario"]), show_field, wind, meta["dt"],
                 meta["scenario"])
     return _png(fig)

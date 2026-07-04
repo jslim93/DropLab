@@ -49,15 +49,15 @@ SCENARIOS = {
     "bomex":     dict(group="Warm", case="bomex", label="BOMEX shallow cumulus",
                       blurb="Trade-wind fair-weather cumulus field — small, non-raining puffs.",
                       ice_default=False, ice_capable=False, allow_electrify=False,
-                      default_min=60, dt_default=2.0),
+                      default_min=90, dt_default=2.0),
     "dycoms":    dict(group="Warm", case="dycoms", label="DYCOMS marine stratocumulus",
                       blurb="A radiatively-driven reflective Sc sheet — the climate sunshade.",
                       ice_default=False, ice_capable=False, allow_electrify=False,
-                      default_min=60, dt_default=1.0),
+                      default_min=90, dt_default=1.0),
     "fog":       dict(group="Warm", case="fog", label="Radiation fog",
                       blurb="A surface cloud from nocturnal ground cooling (base near 0 m).",
                       ice_default=False, ice_capable=False, allow_electrify=False,
-                      default_min=60, dt_default=1.0),
+                      default_min=90, dt_default=1.0),
     "diurnal":   dict(group="Warm", case="diurnal", label="Diurnal cumulus cycle",
                       blurb="Continental cumulus over one full compressed day — clouds build "
                             "with the afternoon sun and decay at night (longest scenario).",
@@ -69,26 +69,26 @@ SCENARIOS = {
                       blurb="A supercooled-liquid deck slowly glaciating by the Wegener–Bergeron–Findeisen (WBF) process — "
                             "a GENTLE ~0.5-1 m/s overturning develops after ~20 min (real Arctic decks circulate slowly).",
                       ice_default=True, ice_capable=True, allow_electrify=False,
-                      default_min=75, dt_default=1.0),
+                      default_min=90, dt_default=1.0),
     # deep_cold is HIDDEN from the picker (the H1/S1 lessons still run it): as a
     # user-facing scenario the storm reads poorly — thin cloud, unclear story.
     "deep_cold": dict(group="Cold & mixed-phase", case="deep_cold",
                       label="Deep cold storm (snow)",
                       blurb="A sub-freezing convective storm that glaciates aloft and snows out.",
                       ice_default=True, ice_capable=True, allow_electrify=False,
-                      default_min=60, dt_default=2.0, hidden=True),
+                      default_min=90, dt_default=2.0, hidden=True),
     # --- Deep convection ---
     "deep_convection": dict(group="Deep convection", case="deep_convection",
                             label="Anelastic cumulonimbus",
                             blurb="A single ~10 km tower with a glaciating anvil — needs the anelastic core.",
                             ice_default=True, ice_capable=True, allow_electrify=True,
-                            default_min=60, dt_default=4.0),
+                            default_min=90, dt_default=4.0),
     # --- Idealized ---
     "idealized": dict(group="Idealized", case="shear", label="Idealized warm bubble",
                       blurb="One warm bubble in an idealized column — add wind shear (Dynamics) "
                             "to tilt it into bands.",
                       ice_default=False, ice_capable=False, allow_electrify=False,
-                      default_min=60, dt_default=2.0),
+                      default_min=90, dt_default=2.0),
 }
 
 # Derived sets (single source of truth = the per-scenario flags above).
