@@ -57,7 +57,8 @@ def run_soa(seed=0, n_ptcl=2000, nt=1500, dt=1.0, T0=293.2, P0=1013e2, RH=0.92,
             collisions=True, collision_mode="lsm", switch_TICE=False,
             eps=0.0, lambda_ent=0.0, ihmd=0.0, init_mode="Random",
             adaptive_dt=True, collect=None, rh_env=0.2,
-            ent_start=0.0, ent_duration=None):
+            ent_start=0.0, ent_duration=None, sedi_removal=False,
+            parcel_depth=100.0):
     """One full ascent on persistent arrays. Returns (diagnostics_by_time, (M,A)).
 
     Entrainment mixing (warm-cloud, Lim & Hoffmann 2023): with lambda_ent>0 the
@@ -90,6 +91,11 @@ def run_soa(seed=0, n_ptcl=2000, nt=1500, dt=1.0, T0=293.2, P0=1013e2, RH=0.92,
     ka = np.array([p.kappa for p in pl], dtype=np.float64)
 
     P, z = P0, 0.0
+    # per-super-droplet height for sedimentation removal (mirrors the object path:
+    # each particle rises with the parcel and falls at its Beard terminal velocity;
+    # a drop reaching the surface leaves the parcel as precipitation).
+    z_sd = np.zeros_like(M)
+    precip_mass = 0.0
     out = {}
     for t in range(nt):
         z, T, P = ascend_parcel(z, T, P, w, dt, (t + 1) * dt, 3000.0, th, 1200.0, ascending_mode)
@@ -120,13 +126,34 @@ def run_soa(seed=0, n_ptcl=2000, nt=1500, dt=1.0, T0=293.2, P0=1013e2, RH=0.92,
             # LSM (O(N), Shima 2009) is the default; "enumerate" runs the full
             # O(N^2) all-pairs scheme (Fortran-style) for validation/comparison.
             _collide = collide_soa_enumerate if collision_mode == "enumerate" else collide_soa
+            A_pre = A          # mutated IN PLACE by the kernel, then compacted copies
             M, A, Ns, ka = _collide(M, A, Ns, ka, dt, rho_p, P, T,
                                     switch_turb_kernel=switch_TICE, epsilon_turb=eps)[:4]
+            if sedi_removal:
+                z_sd = z_sd[A_pre > 0]     # same compaction the collision applied
+        if sedi_removal and M.size:
+            # rain fallout, PARCEL-frame: a parcel is a ~100 m air blob, so a drop
+            # falling at terminal velocity vt leaves it after sinking ~parcel_depth
+            # RELATIVE to the parcel (seconds-to-minutes for rain) — it does NOT need
+            # to reach the ground. Without this, precipitation-sized collectors stay
+            # in the box sweeping up the whole population (0-D has no spatial
+            # separation), which is what collapses N and unbuffers supersaturation.
+            from droplab.flow2d_driver import _fall_speeds
+            _ph = np.zeros(M.size, dtype=np.int8)
+            vt = _fall_speeds(M, A, np.full(M.size, rho_p), np.full(M.size, P),
+                              np.full(M.size, T), _ph)
+            z_sd = z_sd - vt * dt                       # depth fallen below the parcel
+            fell = (z_sd <= -parcel_depth) & (A > 0)
+            if fell.any():
+                precip_mass += float(M[fell].sum())
+                keep = ~fell
+                M, A, Ns, ka, z_sd = M[keep], A[keep], Ns[keep], ka[keep], z_sd[keep]
         if (t + 1) in collect:
             qc, qr, qa, NA, NC, NR, rv_mean = _analysis(M, A, air_mass)
             centers, num = dsd_spectrum(M, A, air_mass)
             e_s = esatw(T); e_a = q * P / (q + r_a / rv)
             out[t + 1] = dict(T=T - 273.15, T_K=T, z=z, RH=e_a / e_s, qv=q * 1e3,
                               qa=qa, qc=qc, qr=qr, NA=NA, NC=NC, NR=NR, rv=rv_mean,
+                              precip=precip_mass / air_mass * 1e3,
                               dsd_r=centers, dsd_n=num)
     return out, (M, A)

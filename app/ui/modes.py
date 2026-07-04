@@ -169,6 +169,12 @@ def render_parcel():
         st.subheader("Physics")
         collisions = st.checkbox("Collision–coalescence", True,
                                  help="Required for rain to form.")
+        sedi_removal = st.checkbox("Rain falls out (sedimentation removal)", True,
+                                   help="Rain-sized drops sink at terminal velocity and "
+                                        "EXIT the ~100 m parcel within seconds–minutes, "
+                                        "accumulating as precipitation. Off = a closed "
+                                        "box whose rain stays and sweeps up the whole "
+                                        "population (unbuffered supersaturation).")
         switch_TICE = st.checkbox("Turbulent collision enhancement (TICE)", False,
                                   help="Wang–Ayala turbulent collision kernel.")
         eps = (st.number_input("ε (m²/s³)", 0.0, 0.5, 0.01, 0.01)
@@ -212,7 +218,7 @@ def render_parcel():
             kappa if np.isscalar(kappa) else tuple(kappa),
             collisions, switch_TICE, eps, _lam, ihmd,
             rh_env=rh_env, ent_start=ent_start_min * 60.0,
-            ent_duration=ent_dur_min * 60.0)
+            ent_duration=ent_dur_min * 60.0, sedi_removal=sedi_removal)
 
     last = out[sorted(out)[-1]]
     m = st.columns(5)
@@ -253,7 +259,7 @@ def render_parcel():
                 float(cp["kappa"]) if np.isscalar(cp["kappa"]) else tuple(cp["kappa"]),
                 collisions, switch_TICE, eps, _lam, ihmd,
                 rh_env=rh_env, ent_start=ent_start_min * 60.0,
-                ent_duration=ent_dur_min * 60.0)
+                ent_duration=ent_dur_min * 60.0, sedi_removal=sedi_removal)
         runs.append((compare_preset, out2, M2, A2))
     tabs = st.tabs(["Time series", "DSD", "Particle population", "Vertical profiles"])
     with tabs[0]:
@@ -264,9 +270,7 @@ def render_parcel():
     with tabs[1]:
         theme.whatami("Droplet size distribution. Growth narrows the spectrum; "
                       "collisions broaden it toward rain sizes.")
-        c1, c2 = st.columns(2)
-        c1.plotly_chart(plots.parcel_dsd_contour(out, dt), use_container_width=True)
-        c2.plotly_chart(plots.parcel_dsd_spectra(out, dt), use_container_width=True)
+        st.plotly_chart(plots.parcel_dsd_contour(out, dt), use_container_width=True)
     with tabs[2]:
         theme.whatami("Each marker is one super-droplet at its radius; size/colour "
                       "scale with its multiplicity A.")
@@ -781,10 +785,7 @@ def render_lecture():
     tab1, tab2 = st.tabs(["Droplet size distribution", "Time series"])
     with tab1:
         if len(runs) == 1:
-            c1, c2 = st.columns(2)
-            c1.plotly_chart(plots.parcel_dsd_contour(runs[0][1], dt),
-                            use_container_width=True)
-            c2.plotly_chart(plots.parcel_dsd_spectra(runs[0][1], dt),
+            st.plotly_chart(plots.parcel_dsd_contour(runs[0][1], dt),
                             use_container_width=True)
         else:
             import plotly.graph_objects as go
