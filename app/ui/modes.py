@@ -578,7 +578,7 @@ def render_climate():
         nt = presets.CLIMATE_RUN_STEPS[run_choice]
         run_min = nt / 60.0   # dt = 1 s in the climate deck
         inject_min = st.slider("Inject at (simulated min)", 0.0, round(run_min, 1),
-                               round(presets.CLIMATE_INJECT_FRAC * run_min, 1),
+                               0.0,
                                step=max(0.5, round(run_min / 40, 1)),
                                disabled=not seed_on, key="clim_inject",
                                help="When the seeding fires — early, so the effect "

@@ -147,7 +147,7 @@ def default_nt(scenario: str, resolution: str = "quick") -> int:
 # can never drift from what the MCB demo button actually runs.
 CLIMATE_RUN_STEPS = {"1 hour": 3600, "2 hours": 7200, "3 hours": 10800}
 CLIMATE_RUN_DEFAULT = "2 hours"
-CLIMATE_INJECT_FRAC = 0.20        # default injection time as a fraction of run
+CLIMATE_INJECT_FRAC = 0.0         # default: seed from the very start
 
 
 # --- the five curated one-click demos --------------------------------------- #

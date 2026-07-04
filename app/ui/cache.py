@@ -226,7 +226,7 @@ _TWOD_CAP = 16
 
 # Bump when build_twod_config's mapping or the engine physics changes so stale disk
 # entries (e.g. pre-CFL-guard NaN results) can never be served for the same widget args.
-_CFG_VERSION = 2
+_CFG_VERSION = 3
 
 
 def _twod_key(scenario, resolution, nt, dt, collisions, ice, habit,
@@ -353,7 +353,15 @@ from examples.cloud_cases import CASES as _CASES
 from droplab.soundings import BOMEX as _BOMEX_SND
 
 _CLIM_BG = {
-    "DYCOMS stratocumulus": dict(extra={}, X=_CLIM_X, Z=_CLIM_Z, ice=False),
+    # DYCOMS needs its observed surface fluxes to PERSIST for hours: cloud-top
+    # radiative cooling continually rains moisture out, and without resupply the
+    # deck starves and collapses by ~45 min (exposed by the 2-h default runs).
+    # H/LE from DYCOMS-II (~16 / ~115 W m^-2); large-scale tendencies neutral.
+    "DYCOMS stratocumulus": dict(
+        extra=dict(forcing=dict(z=[0.0, 1500.0], tls=[0.0, 0.0],
+                                qls=[0.0, 0.0], wls=[0.0, 0.0],
+                                H=16.0, LE=115.0)),
+        X=_CLIM_X, Z=_CLIM_Z, ice=False),
     "BOMEX cumulus": dict(
         extra=dict(sounding=_CASES["bomex"]["sounding"],
                    forcing=_CASES["bomex"]["forcing"], nu=14, nu_scalar=1.5),
