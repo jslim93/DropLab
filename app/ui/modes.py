@@ -224,7 +224,22 @@ def render_parcel():
     m[2].metric("Mean radius (µm)", f"{last['rv']:.2f}")
     m[3].metric("LWC q_c+q_r (g/kg)", f"{last['qc'] + last['qr']:.3f}",
                 help="Liquid water content: cloud + rain mixing ratio.")
-    m[4].metric("Supersaturation (%)", f"{(last['RH'] - 1) * 100:+.3f}")
+    m[4].metric("Supersaturation (%)", f"{(last['RH'] - 1) * 100:+.3f}",
+                help="Water vapour above saturation. Droplets normally BUFFER this "
+                     "near ~0.1–1% by condensing the excess; it can only run higher "
+                     "if the droplet population is gone.")
+    # The closed-parcel rain-out endgame: once collection has eaten (almost) the whole
+    # population, nothing condenses the excess vapour and S climbs unboundedly. Real
+    # parcels drop their rain out and entrain fresh CCN — say so, or a student reads
+    # the S spike as a model bug.
+    if (last["NA"] + last["NC"]) < 1.0 and (last["RH"] - 1) * 100 > 1.5:
+        st.info("**The cloud has rained out.** Collision–coalescence collected "
+                "essentially the whole droplet (and aerosol) population "
+                f"(N_a+N_c = {last['NA'] + last['NC']:.2f} cm⁻³), so nothing is left "
+                "to condense the excess vapour and supersaturation is no longer "
+                "buffered — that is why S climbs at the end. An idealized closed "
+                "parcel keeps its rain and gets no fresh aerosol; a real one "
+                "wouldn't. Try a shorter run, more aerosol, or entrainment.")
 
     runs = [(preset, out, M, A)]
     if compare_preset != "(none)" and compare_preset != preset:
