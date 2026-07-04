@@ -575,11 +575,10 @@ def render_climate():
                  "trade cumulus. Arctic = the MOSAiC supercooled deck, where "
                  "GLACIOGENIC INP seeding is the intervention.")
         background_N = st.slider("Background aerosol N₀ (cm⁻³)", 10.0, 500.0,
-                                 65.0, 5.0,
-                                 help="Default 65 = a clean DRIZZLING deck (DYCOMS-II "
-                                      "RF02-like) where seeding suppresses drizzle and "
-                                      "clearly brightens. Polluted ~400: seeding adds "
-                                      "little (already bright).")
+                                 200.0, 5.0,
+                                 help="Clean marine ~20-65 (drizzling: seeding "
+                                      "brightens strongly); ~200 typical; polluted "
+                                      "~400 (already bright, seeding adds little).")
         st.subheader("2 · Entrainment mixing")
         ihmd = st.slider("Inhomogeneous mixing degree (IHMD)", 0.0, 1.0, 0.0, 0.1,
                          help="How dry-air mixing removes droplets. 0 = every droplet "

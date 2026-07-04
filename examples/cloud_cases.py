@@ -33,12 +33,7 @@ CASES = {
                       sounding=CONGESTUS, forcing=BOMEX_FORCING, N_modes=(200.,), nu=16,
                       nu_scalar=1.5, collisions=True, switch_TICE=True, eps=0.01,
                       sediment=True, **_COMMON),
-    "dycoms": dict(
-        # DYCOMS-II surface fluxes + large-scale subsidence (w = -D z, D=3.75e-6/s):
-        # the deck needs moisture resupply to persist beyond ~45 min, and the
-        # subsidence caps it so the fluxes do not turn it into surface cumulus.
-        forcing=dict(z=[0.0, 750.0, 1500.0], tls=[0.0, 0.0, 0.0], qls=[0.0, 0.0, 0.0],
-                     wls=[0.0, -2.8e-3, -5.6e-3], H=16.0, LE=115.0),nt=1500, dt=1.0, Nx=96, Nz=48, X=4800, Z=1200, n_super=60000,
+    "dycoms": dict(nt=1500, dt=1.0, Nx=96, Nz=48, X=4800, Z=1200, n_super=60000,
                    sounding=DYCOMS, rad_cool=DYCOMS_RADIATION, periodic_x=True,
                    N_modes=(250.,), nu=6, nu_scalar=1.5, collisions=True,
                    switch_TICE=True, eps=0.01, sediment=True, **_COMMON),
