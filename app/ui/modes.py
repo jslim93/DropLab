@@ -410,23 +410,31 @@ def render_twod():
         st.caption("quick ≈ ½–1 min live, full ≈ 2–5 min. Repeats of the same "
                    "settings are cached and instant.")
 
-    if run or st.session_state.pop("twod_autorun", False):
-        st.session_state["twod_active"] = True
-    if not st.session_state.get("twod_active"):
-        st.info("Pick a scenario and microphysics on the left, then press "
-                "**▶ Run cloud** — or open a curated demo from Home.")
-        # scenario teaser: tell the user what THIS pick will show before they commit
-        st.markdown(f"#### {smeta['label']}")
-        st.markdown(smeta["blurb"])
-        return
-
-    twod_args = (
+    # The config is CAPTURED when ▶ Run cloud is pressed; rendering always uses the
+    # captured config. Widget changes after a run are inert until the next press —
+    # they must NOT silently trigger a fresh (expensive) 2-D computation.
+    _args_now = (
         scenario, resolution, nt, dt, micro["collisions"], micro["ice"],
         micro["habit"], micro["electrification"], micro["freezing_mode"],
         micro["homogeneous"], micro["melt"], micro["hallett_mossop"],
         N_modes, mu_um, sig, kappa, seed_on, seed_kind, seed_N, seed_r,
         inject_min, wind_shear, dtheta_bubble, inp_n_cm3, inp_r_um,
         E_breakdown, charge_eff)
+    if run or st.session_state.pop("twod_autorun", False):
+        st.session_state["twod_cfg"] = _args_now
+    twod_args = st.session_state.get("twod_cfg")
+    if twod_args is None:
+        st.info("Pick a scenario and microphysics on the left, then press "
+                "**▶ Run cloud** — or open a curated demo from Home.")
+        # scenario teaser: tell the user what THIS pick will show before they commit
+        st.markdown(f"#### {smeta['label']}")
+        st.markdown(smeta["blurb"])
+        return
+    if twod_args != _args_now:
+        st.caption("⚙️ Settings changed — showing the LAST run. Press **▶ Run cloud** "
+                   "to apply the new settings.")
+    # the captured config drives everything below (incl. the live-stream labels)
+    scenario, resolution, dt = twod_args[0], twod_args[1], twod_args[3]
 
     if cache.twod_is_cached(*twod_args):
         result = cache.run_twod(*twod_args)          # already computed → instant
@@ -608,15 +616,25 @@ def render_climate():
                    "with the control twin. Repeats are cached and instant.")
 
     Nx, Nz, n_super = 64, 40, 30000
-    if not run:
+    # Same capture-on-Run pattern as the 2-D page: widget changes after a run are
+    # inert (and the last result STAYS on screen) until ▶ Run deck is pressed again.
+    _clim_now = (background_N, ihmd, seed_on, seed_kind, seed_N, seed_r,
+                 inject_min, nt, Nx, Nz, n_super, 1.0, background)
+    if run:
+        st.session_state["clim_cfg"] = _clim_now
+    clim_args = st.session_state.get("clim_cfg")
+    if clim_args is None:
         st.info("Set the controls on the left, then press **▶ Run deck**.")
         return
+    if clim_args != _clim_now:
+        st.caption("⚙️ Settings changed — showing the LAST run. Press **▶ Run deck** "
+                   "to apply the new settings.")
+    (background_N, ihmd, seed_on, seed_kind, seed_N, seed_r,
+     inject_min, nt, Nx, Nz, n_super, _dt_c, background) = clim_args
 
     # SEEDED deck first, streaming live, so the user sees frames immediately;
     # the quiet control twin runs afterwards (its baseline is only needed by the
     # comparison overlays, which all render later anyway).
-    clim_args = (background_N, ihmd, seed_on, seed_kind, seed_N, seed_r,
-                 inject_min, nt, Nx, Nz, n_super, 1.0, background)
     if cache.climate_is_cached(*clim_args):
         out = cache.run_climate(*clim_args)          # already computed → instant
     else:
