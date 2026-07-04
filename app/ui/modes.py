@@ -211,36 +211,16 @@ def render_parcel():
                        f"{ent_start_min + ent_dur_min:g}.")
 
     _lam = lambda_ent if ent_on else 0.0
-    # RUN GATE (박사: recompute only on the button, not on every widget change).
-    # The button stores the current config; rendering always uses the STORED config,
-    # so widget tweaks are inert until ▶ Run parcel is pressed again.
-    _cfg = dict(n_ptcl=n_ptcl, nt=nt, dt=dt, T0=T0, P0=P0, RH=RH, w=w,
-                ascending_mode=ascending_mode, N_raw=tuple(N_raw),
-                mu_um=tuple(mu_um), sig=tuple(sig),
-                kappa=kappa if np.isscalar(kappa) else tuple(kappa),
-                collisions=collisions, switch_TICE=switch_TICE, eps=eps,
-                lam=_lam, ihmd=ihmd, rh_env=rh_env,
-                ent_start=ent_start_min * 60.0, ent_dur=ent_dur_min * 60.0,
-                sedi=sedi_removal, preset=preset, compare=compare_preset)
-    with st.sidebar:
-        if st.button("▶ Run parcel", type="primary", use_container_width=True):
-            st.session_state["parcel_cfg"] = _cfg
-        st.caption("Adjust anything above, then press Run. A repeated config "
-                   "returns instantly from the cache.")
-    cfgr = st.session_state.get("parcel_cfg")
-    if cfgr is None:
-        st.info("Set the controls on the left, then press **▶ Run parcel**.")
-        return
-    preset, compare_preset = cfgr["preset"], cfgr["compare"]
-    nt, dt = cfgr["nt"], cfgr["dt"]
+    # LIVE reactivity (박사's call): the parcel is fast, so every widget change
+    # recomputes immediately — cause -> effect with no extra click.
     with st.spinner("Running parcel ascent…"):
         out, M, A = cache.run_parcel(
-            0, cfgr["n_ptcl"], cfgr["nt"], cfgr["dt"], cfgr["T0"], cfgr["P0"],
-            cfgr["RH"], cfgr["w"], cfgr["ascending_mode"],
-            cfgr["N_raw"], cfgr["mu_um"], cfgr["sig"], cfgr["kappa"],
-            cfgr["collisions"], cfgr["switch_TICE"], cfgr["eps"], cfgr["lam"],
-            cfgr["ihmd"], rh_env=cfgr["rh_env"], ent_start=cfgr["ent_start"],
-            ent_duration=cfgr["ent_dur"], sedi_removal=cfgr["sedi"])
+            0, n_ptcl, nt, dt, T0, P0, RH, w, ascending_mode,
+            tuple(N_raw), tuple(mu_um), tuple(sig),
+            kappa if np.isscalar(kappa) else tuple(kappa),
+            collisions, switch_TICE, eps, _lam, ihmd,
+            rh_env=rh_env, ent_start=ent_start_min * 60.0,
+            ent_duration=ent_dur_min * 60.0, sedi_removal=sedi_removal)
 
     last = out[sorted(out)[-1]]
     m = st.columns(5)
@@ -274,15 +254,14 @@ def render_parcel():
         cp = presets.AEROSOL_PRESETS[compare_preset]
         with st.spinner(f"Running the {compare_preset} overlay…"):
             out2, M2, A2 = cache.run_parcel(
-                0, cfgr["n_ptcl"], cfgr["nt"], cfgr["dt"], cfgr["T0"], cfgr["P0"],
-                cfgr["RH"], cfgr["w"], cfgr["ascending_mode"],
+                0, n_ptcl, nt, dt, T0, P0, RH, w, ascending_mode,
                 tuple(float(x) for x in cp["N_raw"]),
                 tuple(float(x) for x in cp["mu_um"]),
                 tuple(float(x) for x in cp["sig"]),
                 float(cp["kappa"]) if np.isscalar(cp["kappa"]) else tuple(cp["kappa"]),
-                cfgr["collisions"], cfgr["switch_TICE"], cfgr["eps"], cfgr["lam"],
-                cfgr["ihmd"], rh_env=cfgr["rh_env"], ent_start=cfgr["ent_start"],
-                ent_duration=cfgr["ent_dur"], sedi_removal=cfgr["sedi"])
+                collisions, switch_TICE, eps, _lam, ihmd,
+                rh_env=rh_env, ent_start=ent_start_min * 60.0,
+                ent_duration=ent_dur_min * 60.0, sedi_removal=sedi_removal)
         runs.append((compare_preset, out2, M2, A2))
     tabs = st.tabs(["Time series", "DSD", "Particle population", "Vertical profiles"])
     with tabs[0]:
