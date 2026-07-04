@@ -49,15 +49,15 @@ SCENARIOS = {
     "bomex":     dict(group="Warm", case="bomex", label="BOMEX shallow cumulus",
                       blurb="Trade-wind fair-weather cumulus field — small, non-raining puffs.",
                       ice_default=False, ice_capable=False, allow_electrify=False,
-                      default_min=35, dt_default=2.0),
+                      default_min=60, dt_default=2.0),
     "dycoms":    dict(group="Warm", case="dycoms", label="DYCOMS marine stratocumulus",
                       blurb="A radiatively-driven reflective Sc sheet — the climate sunshade.",
                       ice_default=False, ice_capable=False, allow_electrify=False,
-                      default_min=30, dt_default=1.0),
+                      default_min=60, dt_default=1.0),
     "fog":       dict(group="Warm", case="fog", label="Radiation fog",
                       blurb="A surface cloud from nocturnal ground cooling (base near 0 m).",
                       ice_default=False, ice_capable=False, allow_electrify=False,
-                      default_min=15, dt_default=1.0),
+                      default_min=60, dt_default=1.0),
     "diurnal":   dict(group="Warm", case="diurnal", label="Diurnal cumulus cycle",
                       blurb="Continental cumulus over one full compressed day — clouds build "
                             "with the afternoon sun and decay at night (longest scenario).",
@@ -76,7 +76,7 @@ SCENARIOS = {
                       label="Deep cold storm (snow)",
                       blurb="A sub-freezing convective storm that glaciates aloft and snows out.",
                       ice_default=True, ice_capable=True, allow_electrify=False,
-                      default_min=45, dt_default=2.0, hidden=True),
+                      default_min=60, dt_default=2.0, hidden=True),
     # --- Deep convection ---
     "deep_convection": dict(group="Deep convection", case="deep_convection",
                             label="Anelastic cumulonimbus",
@@ -88,7 +88,7 @@ SCENARIOS = {
                       blurb="One warm bubble in an idealized column — add wind shear (Dynamics) "
                             "to tilt it into bands.",
                       ice_default=False, ice_capable=False, allow_electrify=False,
-                      default_min=20, dt_default=2.0),
+                      default_min=60, dt_default=2.0),
 }
 
 # Derived sets (single source of truth = the per-scenario flags above).

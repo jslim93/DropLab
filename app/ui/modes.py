@@ -328,7 +328,10 @@ def render_twod():
         # duration (decoupled from grid) — defaults follow the scenario, keyed by
         # scenario so switching gives fresh physics-tuned defaults.
         with st.expander("⏱️ Duration", expanded=True):
-            sim_min = st.slider("Simulated time (min)", 5, int(2 * smeta["default_min"]),
+            # minimum 60 simulated minutes: shorter runs kept ending while the cloud
+            # was still forming (clouds need their full life cycle to read).
+            sim_min = st.slider("Simulated time (min)", 60,
+                                max(120, int(2 * smeta["default_min"])),
                                 int(smeta["default_min"]), 1,
                                 key=f"twod_min_{scenario}",
                                 help="How long to evolve the cloud. Defaults are "
@@ -395,7 +398,7 @@ def render_twod():
         wind = st.radio("Wind overlay", ["off", "streamlines", "arrows"],
                         horizontal=True)
         run = st.button("▶ Run cloud", type="primary", use_container_width=True)
-        st.caption("quick ≈ 15–30 s live, full ≈ 1–3 min. Repeats of the same "
+        st.caption("quick ≈ ½–1 min live, full ≈ 2–5 min. Repeats of the same "
                    "settings are cached and instant.")
 
     if run or st.session_state.pop("twod_autorun", False):
