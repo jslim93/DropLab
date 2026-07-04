@@ -41,9 +41,10 @@ def aerosol_two_mode(key: str, default_N=200.0, default_mu=0.08,
 
 
 # Strategy-specific seed defaults — MCB = many tiny; GCCN = a few giant.
-SEED_KINDS = ["MCB sea-salt", "GCCN (precip)"]
+SEED_KINDS = ["MCB sea-salt", "GCCN (precip)", "Glaciogenic INP (ice)"]
 _GCCN_N_OPTS = [1e-3, 2e-3, 5e-3, 1e-2, 2e-2, 5e-2, 0.1, 0.2, 0.5, 1.0]
 SEED_DEFAULTS = {
+    "Glaciogenic INP (ice)": dict(N=1.0, r=2.0),
     "MCB sea-salt":  dict(N=500.0, r=0.05),   # many tiny → brighten
     "GCCN (precip)": dict(N=0.01, r=2.0),     # a few giant → trigger rain
 }
@@ -63,6 +64,12 @@ def seed_amount_size(key: str, kind: str, disabled: bool = False):
                       help="MCB = many tiny sea-salt particles → brighten.")
         r = st.slider("Seed dry radius (µm)", 0.02, 0.2, d["r"], 0.01,
                       disabled=disabled, key=f"{key}_seedr_mcb")
+    elif kind == "Glaciogenic INP (ice)":
+        N = st.slider("Seed amount N (cm⁻³)", 0.1, 5.0, d["N"], 0.1,
+                      disabled=disabled, key=f"{key}_seedN_inp",
+                      help="Ice-nucleating particles injected as ice embryos → the "
+                           "deck glaciates (WBF) and DIMS — the cold-regime lever.")
+        r = 2.0
     else:  # GCCN — N spans decades → a log select-slider
         N = st.select_slider("Seed amount N (cm⁻³)", options=_GCCN_N_OPTS,
                              value=d["N"], format_func=lambda v: f"{v:g}",
@@ -114,28 +121,25 @@ def microphysics_panel(scenario: str, key: str, *, ice0=False, habit0=False,
         if not ice_capable:
             st.caption("· Warm cloud — temperatures stay above 0 °C, no ice phase.")
 
-        # coupling 1: habit ⇒ ice
-        habit = st.checkbox("Ice habit (crystal shapes)",
-                            value=(habit0 and ice), disabled=not ice,
-                            key=f"{key}_{scenario}_habit",
-                            help="Predicts plate↔column crystal shapes (needs ice on).")
-        habit = bool(habit and ice)   # don't let a stale disabled value leak through
-        if not ice:
-            st.caption("· Ice habit needs **Ice / mixed-phase** on.")
+        # habit is ALWAYS ON with ice (crystal shapes are part of the ice physics,
+        # not an extra) and lightning is ALWAYS ON for the cumulonimbus scenario.
+        habit = bool(ice)
+        electrification = bool(ice and can_electrify)
+        if ice:
+            st.caption("· Crystal habit (plates ↔ columns) is on with ice."
+                       + (" · Lightning is on for this storm." if can_electrify else ""))
 
-        # coupling 2: electrification ⇒ ice AND a deep/cold scenario
-        elec_disabled = (not ice) or (not can_electrify)
-        electrification = st.checkbox(
-            "Electrification + lightning",
-            value=(electrify0 and ice and can_electrify),
-            disabled=elec_disabled, key=f"{key}_{scenario}_elec",
-            help="Charge separation by riming → a dielectric-breakdown bolt.")
-        electrification = bool(electrification and ice and can_electrify)
-        if not can_electrify:
-            st.caption("· Lightning needs a **deep / cold mixed-phase** scenario "
-                       "(deep cold storm or cumulonimbus).")
-        elif not ice:
-            st.caption("· Lightning needs **Ice / mixed-phase** on.")
+        inp_n_cm3, inp_r_um = None, None
+        if ice:
+            _b = presets.base_config(scenario)
+            inp_n_cm3 = st.slider(
+                "INP concentration (cm⁻³)", 0.0, 2.0, 1.0, 0.05,
+                key=f"{key}_{scenario}_inp",
+                help="Ice-nucleating particles. Fewer → more persistent supercooled "
+                     "liquid; more → faster glaciation.")
+            inp_r_um = st.slider("INP radius (µm)", 0.5, 6.0,
+                                 float(_b.get("inp_r_um", 3.0)), 0.5,
+                                 key=f"{key}_{scenario}_inpr")
 
         freezing_mode, homogeneous, melt, hm = "abifm", True, True, True
         if ice:
@@ -152,4 +156,5 @@ def microphysics_panel(scenario: str, key: str, *, ice0=False, habit0=False,
                                  key=f"{key}_hm")
     return dict(collisions=collisions, ice=ice, habit=habit,
                 electrification=electrification, freezing_mode=freezing_mode,
-                homogeneous=homogeneous, melt=melt, hallett_mossop=hm)
+                homogeneous=homogeneous, melt=melt, hallett_mossop=hm,
+                inp_n_cm3=inp_n_cm3, inp_r_um=inp_r_um)

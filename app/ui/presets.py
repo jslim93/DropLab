@@ -54,15 +54,6 @@ SCENARIOS = {
                       blurb="A radiatively-driven reflective Sc sheet — the climate sunshade.",
                       ice_default=False, ice_capable=False, allow_electrify=False,
                       default_min=90, dt_default=1.0),
-    "fog":       dict(group="Warm", case="fog", label="Radiation fog",
-                      blurb="A surface cloud from nocturnal ground cooling (base near 0 m).",
-                      ice_default=False, ice_capable=False, allow_electrify=False,
-                      default_min=90, dt_default=1.0),
-    "diurnal":   dict(group="Warm", case="diurnal", label="Diurnal cumulus cycle",
-                      blurb="Continental cumulus over one full compressed day — clouds build "
-                            "with the afternoon sun and decay at night (longest scenario).",
-                      ice_default=False, ice_capable=False, allow_electrify=False,
-                      default_min=240, dt_default=2.0),
     # --- Cold & mixed-phase ---
     "arctic":    dict(group="Cold & mixed-phase", case="arctic",
                       label="Arctic mixed-phase deck (MOSAiC)",
@@ -106,8 +97,6 @@ ICE_CAPABLE = {k for k, v in SCENARIOS.items() if v["ice_capable"]}
 QUICKLOOK = {
     "bomex":     dict(Nx=72, Nz=56, n_super=20000),
     "dycoms":    dict(Nx=72, Nz=40, n_super=16000),
-    "fog":       dict(Nx=56, Nz=40, n_super=14000),
-    "diurnal":   dict(Nx=64, Nz=48, n_super=16000),
     "arctic":    dict(Nx=64, Nz=44, n_super=18000),
     "deep_cold": dict(Nx=64, Nz=64, n_super=18000),
     "deep_convection": dict(Nx=84, Nz=80, X=12000.0, Z=12000.0,
@@ -156,8 +145,8 @@ def default_nt(scenario: str, resolution: str = "quick") -> int:
 # --- climate-mode run-length constants (single source of truth) ------------- #
 # Used by BOTH render_climate and cache.demo_climate_args so the warmed demo key
 # can never drift from what the MCB demo button actually runs.
-CLIMATE_RUN_STEPS = {"Quick": 1000, "Standard": 1800, "Long": 2800}
-CLIMATE_RUN_DEFAULT = "Standard"
+CLIMATE_RUN_STEPS = {"1 hour": 3600, "2 hours": 7200, "3 hours": 10800}
+CLIMATE_RUN_DEFAULT = "2 hours"
 CLIMATE_INJECT_FRAC = 0.20        # default injection time as a fraction of run
 
 

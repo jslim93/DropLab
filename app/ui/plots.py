@@ -106,7 +106,36 @@ def _draw_scene(ax, flow, frame, qc_max, r_max, show_field, wind, dt, scenario):
     draw_frame(ax, flow, frame, "qc", vmax=qc_max, r_max=r_max,
                show_aerosol=(scenario != "fog"), quiver=(wind != "off"),
                quiver_style=("arrows" if wind == "arrows" else "streamlines"))
-    ax.set_title(f"{scenario}   t = {frame['step'] * dt:.0f} s")
+    # ICE overlay: draw frozen super-droplets distinctly ON TOP of the radius-coloured
+    # liquid scatter — cyan/white so ice reads at a glance, and, when habit ran,
+    # SHAPED by the crystal aspect ratio: plates as wide dashes, columns as tall bars.
+    if "phase" in frame:
+        ph = np.asarray(frame["phase"])
+        r_all = np.asarray(frame["r_um"])
+        # only CRYSTAL-sized ice (tiny frozen haze aloft would paint a cyan blanket),
+        # subsampled so the overlay reads as crystals, not a wall
+        icy = (ph == 1) & (r_all > 5.0)
+        idx = np.flatnonzero(icy)
+        if idx.size:
+            if idx.size > 1200:
+                idx = idx[np.linspace(0, idx.size - 1, 1200).astype(int)]
+            xi = np.asarray(frame["x"])[idx]
+            zi = np.asarray(frame["z"])[idx]
+            ri = r_all[idx]
+            sz = np.clip(5.0 + 0.9 * np.sqrt(np.maximum(ri, 0.0)), 5.0, 40.0)
+            if "phi" in frame:
+                phi = np.asarray(frame["phi"])[idx]
+                plate, column = phi < 0.95, phi > 1.05
+                other = ~(plate | column)
+                for m, mk in ((plate, "_"), (column, "|"), (other, "*")):
+                    if m.any():
+                        ax.scatter(xi[m], zi[m], s=sz[m], marker=mk, c="#28c8d8",
+                                   linewidths=1.1, alpha=0.85, zorder=5)
+            else:
+                ax.scatter(xi, zi, s=sz, marker="*", c="#28c8d8",
+                           linewidths=0.0, edgecolors="none", alpha=0.85, zorder=5)
+    _t = f"t = {frame['step'] * dt / 60.0:.1f} min"
+    ax.set_title(_t if not scenario else f"{scenario}   {_t}")
 
 
 def live_frame_fig(flow, frame, scenario, dt, show_field, wind, qc_max):
@@ -178,7 +207,7 @@ def climate_gif(res, seed_on, duration=120):
             draw_frame_seeded(ax, flow, fr, qmax, r_max=60.0)
         else:
             draw_frame(ax, flow, fr, "qc", vmax=qmax, r_max=60.0)
-        ax.set_title(f"stratocumulus deck   frame {k + 1}/{len(frames)}")
+        ax.set_title(f"frame {k + 1}/{len(frames)}")
         buf = io.BytesIO()
         fig.savefig(buf, format="png", dpi=92)
         plt.close(fig)
@@ -461,7 +490,7 @@ def climate_scene_series_gif(result, ctrl_ts=None, duration=160):
         gs = fig.add_gridspec(n, 2, width_ratios=[1.7, 1.0], wspace=0.32, hspace=0.7)
         ax = fig.add_subplot(gs[:, 0])
         _draw_climate_scene(ax, flow, fr, vmax, seed_on)
-        ax.set_title(f"stratocumulus deck   t = {t[kk]:.0f} s", fontsize=9)
+        ax.set_title(f"t = {t[kk] / 60.0:.1f} min", fontsize=9)
         for i, (title, unit, k, col) in enumerate(panels):
             axp = fig.add_subplot(gs[i, 1])
             axp.plot(t[:kk + 1], ts[k][:kk + 1], color=col, lw=1.8,

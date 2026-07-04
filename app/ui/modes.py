@@ -323,7 +323,12 @@ def render_twod():
 
         micro = controls.microphysics_panel(
             scenario, "twod", ice0=smeta["ice_default"])
-        N_modes, mu_um, sig, kappa = controls.aerosol_two_mode("twod")
+        # per-SCENARIO aerosol keys + the case's own validated N as the default —
+        # a shared key let one scenario's slider silently contaminate another
+        # (e.g. a low-N experiment made BOMEX/DYCOMS drizzle heavily).
+        _bN = float(presets.base_config(scenario)["N_modes"][0])
+        N_modes, mu_um, sig, kappa = controls.aerosol_two_mode(
+            f"twod_{scenario}", default_N=_bN)
 
         # duration (decoupled from grid) — defaults follow the scenario, keyed by
         # scenario so switching gives fresh physics-tuned defaults.
@@ -347,7 +352,8 @@ def render_twod():
 
         # dynamics / advanced (scenario-aware)
         wind_shear, dtheta_bubble = 0.0, None
-        inp_n_cm3, inp_r_um = None, None
+        inp_n_cm3 = micro.get("inp_n_cm3")
+        inp_r_um = micro.get("inp_r_um")
         E_breakdown, charge_eff = 400.0, 0.3
         _bubble = {"idealized", "congestus", "deep_cold", "deep_convection"}
         with st.expander("🌀 Dynamics & advanced"):
@@ -370,16 +376,6 @@ def render_twod():
             if scenario == "deep_convection":
                 st.caption("Anelastic core is forced for this scenario "
                            "(Boussinesq caps the tower ~2.6 km).")
-            if micro["ice"]:
-                _b = presets.base_config(scenario)   # INP defaults follow the case
-                inp_n_cm3 = st.slider(
-                    "INP concentration (cm⁻³)", 0.0, 2.0,
-                    float(_b.get("inp_n_cm3", 0.5)), 0.05, key=f"twod_inp_{scenario}",
-                    help="Ice-nucleating particles. Fewer → more persistent liquid; "
-                         "more → faster glaciation.")
-                inp_r_um = st.slider("INP radius (µm)", 0.5, 6.0,
-                                     float(_b.get("inp_r_um", 3.0)), 0.5,
-                                     key=f"twod_inpr_{scenario}")
             if micro["electrification"]:
                 charge_eff = st.slider("Charge separation efficiency", 0.05, 0.6,
                                        0.3, 0.05)
@@ -550,7 +546,13 @@ def render_climate():
                  "brighten the cloud (Twomey).", accent=theme.MODE_ACCENT["climate"])
 
     with st.sidebar:
-        st.subheader("1 · Background air")
+        st.subheader("1 · Background deck")
+        background = st.selectbox(
+            "Cloud regime", ["DYCOMS stratocumulus", "BOMEX cumulus",
+                             "Arctic mixed-phase"],
+            help="Sc = the classic marine sunshade (MCB target). BOMEX = shallow "
+                 "trade cumulus. Arctic = the MOSAiC supercooled deck, where "
+                 "GLACIOGENIC INP seeding is the intervention.")
         background_N = st.slider("Background aerosol N₀ (cm⁻³)", 10.0, 500.0,
                                  200.0, 10.0,
                                  help="Clean marine ~20; polluted ~400.")
@@ -561,8 +563,10 @@ def render_climate():
                               "evaporate (number drops, survivors keep their size).")
         st.subheader("3 · Deliberate seeding")
         seed_on = st.checkbox("Seed the cloud", value=True)
-        seed_kind = st.selectbox("Strategy", controls.SEED_KINDS,
-                                 disabled=not seed_on, key="clim_kind")
+        _kinds = (["Glaciogenic INP (ice)"] if background == "Arctic mixed-phase"
+                  else [k for k in controls.SEED_KINDS if "INP" not in k])
+        seed_kind = st.selectbox("Strategy", _kinds,
+                                 disabled=not seed_on, key=f"clim_kind_{background}")
         seed_N, seed_r = controls.seed_amount_size("clim", seed_kind,
                                                    disabled=not seed_on)
         st.subheader("4 · Run length")
@@ -596,7 +600,7 @@ def render_climate():
     # the quiet control twin runs afterwards (its baseline is only needed by the
     # comparison overlays, which all render later anyway).
     clim_args = (background_N, ihmd, seed_on, seed_kind, seed_N, seed_r,
-                 inject_min, nt, Nx, Nz, n_super)
+                 inject_min, nt, Nx, Nz, n_super, 1.0, background)
     if cache.climate_is_cached(*clim_args):
         out = cache.run_climate(*clim_args)          # already computed → instant
     else:
@@ -608,7 +612,7 @@ def render_climate():
 
         def _cb(step, total, frame, flow):
             try:
-                fig = plots.live_frame_fig(flow, frame, "dycoms", 1.0, True, "off",
+                fig = plots.live_frame_fig(flow, frame, "", 1.0, True, "off",
                                            max(0.3, float(frame["qc"].max())))
                 live.pyplot(fig, clear_figure=True)
                 plots.close(fig)      # clear_figure clears but doesn't free it
@@ -640,7 +644,7 @@ def render_climate():
     twin = None
     if seed_on and compare:
         ctrl_args = (background_N, ihmd, False, seed_kind, seed_N, seed_r,
-                     inject_min, nt, Nx, Nz, n_super)
+                     inject_min, nt, Nx, Nz, n_super, 1.0, background)
         if cache.climate_is_cached(*ctrl_args):
             twin = cache.run_climate(*ctrl_args)
         else:

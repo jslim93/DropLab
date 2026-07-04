@@ -184,7 +184,7 @@ def test_ice_capability_rule():
     # shallow-warm scenarios cannot enable ice; congestus + cold/deep can
     for v in presets.SCENARIOS.values():
         assert isinstance(v.get("ice_capable"), bool)
-    for warm in ("bomex", "dycoms", "fog", "diurnal", "idealized"):
+    for warm in ("bomex", "dycoms", "idealized"):
         assert presets.SCENARIOS[warm]["ice_capable"] is False
         assert warm not in presets.ICE_CAPABLE
     for cold in ("arctic", "deep_cold", "deep_convection"):

@@ -344,11 +344,43 @@ _CLIM_ORDER = []
 _CLIM_CAP = 12
 
 
+# Climate background decks. Each entry: engine kwargs describing the environment.
+# dycoms = the classic marine Sc sunshade; bomex = shallow trade cumulus (surface-flux
+# driven); arctic = MOSAiC mixed-phase deck (ice on) where GLACIOGENIC INP seeding
+# demonstrates the cold-regime intervention (ice grows at the liquid's expense -> the
+# deck dims: the opposite sign to MCB).
+from examples.cloud_cases import CASES as _CASES
+from droplab.soundings import BOMEX as _BOMEX_SND
+
+_CLIM_BG = {
+    "DYCOMS stratocumulus": dict(extra={}, X=_CLIM_X, Z=_CLIM_Z, ice=False),
+    "BOMEX cumulus": dict(
+        extra=dict(sounding=_CASES["bomex"]["sounding"],
+                   forcing=_CASES["bomex"]["forcing"], nu=14, nu_scalar=1.5),
+        X=4800.0, Z=3000.0, ice=False, drop=("rad_cool",)),
+    "Arctic mixed-phase": dict(
+        extra=dict(sounding=_CASES["arctic"]["sounding"],
+                   rad_cool=_CASES["arctic"]["rad_cool"], ice=True,
+                   freezing_mode="abifm", inp_n_cm3=_CASES["arctic"]["inp_n_cm3"],
+                   inp_r_um=_CASES["arctic"]["inp_r_um"],
+                   inp_sigma=_CASES["arctic"]["inp_sigma"], nu=6, nu_scalar=1.0),
+        X=4800.0, Z=2600.0, ice=True, drop=("rad_cool",)),
+}
+
+
+def _inp_seeding_spec(nt, dt, seed_N, z_lo, z_hi):
+    """Glaciogenic (direct-ice) injection: INP-born ice embryos into the cloud layer
+    (engine spec phase='ice'; same canonical keys as tests/test_ice.py)."""
+    return dict(t_inject=max(50.0, 0.25 * nt * dt), x_frac=(0.0, 1.0),
+                z_lo=z_lo, z_hi=z_hi, N_cm3=seed_N, r_um=2.0, r_wet_um=2.0,
+                kappa=0.6, n_super=6000, phase="ice")
+
+
 def _clim_key(background_N, ihmd, seed_on, seed_kind, seed_N, seed_r, inject_min,
-              nt, Nx, Nz, n_super, dt=1.0):
+              nt, Nx, Nz, n_super, dt=1.0, background="DYCOMS stratocumulus"):
     def _o(x):
         return None if x is None else round(float(x), 6)
-    return (_CFG_VERSION, round(float(background_N), 4), round(float(ihmd), 4),
+    return (_CFG_VERSION, background, round(float(background_N), 4), round(float(ihmd), 4),
             bool(seed_on), seed_kind, _o(seed_N), _o(seed_r), _o(inject_min),
             int(nt), int(Nx), int(Nz), int(n_super), round(float(dt), 6))
 
@@ -370,7 +402,8 @@ def _clim_remember(key, payload):
 
 
 def run_climate(background_N, ihmd, seed_on, seed_kind, seed_N, seed_r,
-                inject_min, nt, Nx, Nz, n_super, dt=1.0, on_frame=None):
+                inject_min, nt, Nx, Nz, n_super, dt=1.0,
+                background="DYCOMS stratocumulus", on_frame=None):
     """Stratocumulus run for the climate twin, process-cached so the FIRST run can
     stream live via ``on_frame`` and repeats are instant.
 
@@ -383,20 +416,29 @@ def run_climate(background_N, ihmd, seed_on, seed_kind, seed_N, seed_r,
     headline scalars. (No q_c series: q_c is not the climate-relevant metric.)
     """
     key = _clim_key(background_N, ihmd, seed_on, seed_kind, seed_N, seed_r,
-                    inject_min, nt, Nx, Nz, n_super, dt)
+                    inject_min, nt, Nx, Nz, n_super, dt, background)
     if key in _CLIM_CACHE:
         return _CLIM_CACHE[key]
     disk = _disk_load(_disk_path("clim", key))
     if disk is not None:
         return _clim_remember(key, disk)
 
+    bg = _CLIM_BG.get(background, _CLIM_BG["DYCOMS stratocumulus"])
     spec = None
     if seed_on:
-        spec = _seeding_spec(seed_kind, float(seed_N), float(seed_r), nt, dt)
+        if seed_kind == "Glaciogenic INP (ice)":
+            z_top = bg["Z"]
+            spec = _inp_seeding_spec(nt, dt, float(seed_N),
+                                     z_lo=0.45 * z_top, z_hi=0.72 * z_top)
+        else:
+            spec = _seeding_spec(seed_kind, float(seed_N), float(seed_r), nt, dt)
         if inject_min is not None:
             spec["t_inject"] = float(inject_min) * 60.0
     base = {**_BASE, "collect_every": max(2, nt // 30)}
-    res = run_flow2d_dynamic(nt=nt, dt=dt, Nx=Nx, Nz=Nz, X=_CLIM_X, Z=_CLIM_Z,
+    for k in bg.get("drop", ()):
+        base.pop(k, None)
+    base.update(bg["extra"])
+    res = run_flow2d_dynamic(nt=nt, dt=dt, Nx=Nx, Nz=Nz, X=bg["X"], Z=bg["Z"],
                              n_super=n_super, N_modes=(float(background_N),),
                              ihmd=float(ihmd), seeding=spec, seed=3,
                              on_frame=on_frame, **base)
