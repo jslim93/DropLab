@@ -42,10 +42,10 @@ def aerosol_two_mode(key: str, default_N=200.0, default_mu=0.08,
 
 # Strategy-specific seed defaults — MCB = many tiny; GCCN = a few giant.
 SEED_KINDS = ["MCB sea-salt", "GCCN (precip)", "Glaciogenic INP (ice)"]
-_GCCN_N_OPTS = [1e-3, 2e-3, 5e-3, 1e-2, 2e-2, 5e-2, 0.1, 0.2, 0.5, 1.0]
+_GCCN_N_OPTS = [1e-3, 2e-3, 5e-3, 1e-2, 2e-2, 5e-2, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0]
 SEED_DEFAULTS = {
     "Glaciogenic INP (ice)": dict(N=1.0, r=2.0),
-    "MCB sea-salt":  dict(N=500.0, r=0.05),   # many tiny → brighten
+    "MCB sea-salt": dict(N=500.0, r=0.2),   # many tiny → brighten
     "GCCN (precip)": dict(N=0.01, r=2.0),     # a few giant → trigger rain
 }
 
@@ -59,10 +59,10 @@ def seed_amount_size(key: str, kind: str, disabled: bool = False):
     """
     d = SEED_DEFAULTS[kind]
     if kind == "MCB sea-salt":
-        N = st.slider("Seed amount N (cm⁻³)", 50.0, 2000.0, d["N"], 10.0,
+        N = st.slider("Seed amount N (cm⁻³)", 50.0, 5000.0, d["N"], 10.0,
                       disabled=disabled, key=f"{key}_seedN_mcb",
                       help="MCB = many tiny sea-salt particles → brighten.")
-        r = st.slider("Seed dry radius (µm)", 0.02, 0.2, d["r"], 0.01,
+        r = st.slider("Seed dry radius (µm)", 0.05, 0.5, d["r"], 0.01,
                       disabled=disabled, key=f"{key}_seedr_mcb")
     elif kind == "Glaciogenic INP (ice)":
         N = st.slider("Seed amount N (cm⁻³)", 0.1, 5.0, d["N"], 0.1,
@@ -75,7 +75,7 @@ def seed_amount_size(key: str, kind: str, disabled: bool = False):
                              value=d["N"], format_func=lambda v: f"{v:g}",
                              disabled=disabled, key=f"{key}_seedN_gccn",
                              help="GCCN = a few giant particles → trigger rain.")
-        r = st.slider("Seed dry radius (µm)", 0.5, 3.0, d["r"], 0.1,
+        r = st.slider("Seed dry radius (µm)", 0.5, 6.0, d["r"], 0.1,
                       disabled=disabled, key=f"{key}_seedr_gccn")
     return float(N), float(r)
 

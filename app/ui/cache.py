@@ -226,7 +226,7 @@ _TWOD_CAP = 16
 
 # Bump when build_twod_config's mapping or the engine physics changes so stale disk
 # entries (e.g. pre-CFL-guard NaN results) can never be served for the same widget args.
-_CFG_VERSION = 3
+_CFG_VERSION = 4
 
 
 def _twod_key(scenario, resolution, nt, dt, collisions, ice, habit,
@@ -358,9 +358,9 @@ _CLIM_BG = {
     # deck starves and collapses by ~45 min (exposed by the 2-h default runs).
     # H/LE from DYCOMS-II (~16 / ~115 W m^-2); large-scale tendencies neutral.
     "DYCOMS stratocumulus": dict(
-        extra=dict(forcing=dict(z=[0.0, 1500.0], tls=[0.0, 0.0],
-                                qls=[0.0, 0.0], wls=[0.0, 0.0],
-                                H=16.0, LE=115.0)),
+        # forcing UNIFIED with the 2-D dycoms scenario (single source: CASES) —
+        # same regime, same physics on both pages.
+        extra=dict(forcing=_CASES["dycoms"]["forcing"]),
         X=_CLIM_X, Z=_CLIM_Z, ice=False),
     "BOMEX cumulus": dict(
         extra=dict(sounding=_CASES["bomex"]["sounding"],
