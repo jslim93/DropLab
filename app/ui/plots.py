@@ -19,6 +19,7 @@ dicts; no physics.
 from __future__ import annotations
 
 import io
+import re
 from types import SimpleNamespace
 
 import numpy as np
@@ -38,6 +39,13 @@ VIRIDIS = "viridis"
 PLATE = "#3B6FB5"
 COLUMN = "#C0504D"
 NIGHT = "#070B16"
+
+
+def _mpl_label(text):
+    """Convert the plotly-style <sub> markup used in shared panel titles into
+    matplotlib mathtext, so the SAME title strings render correctly in both
+    renderers (raw '<sub>' tags were showing literally in the GIF panels)."""
+    return re.sub(r"(\w)<sub>(.+?)</sub>", r"$\1_{\2}$", text)
 
 
 def flow_proxy(meta):
@@ -343,7 +351,7 @@ def twod_timeseries(result):
                                      line=dict(color=col), showlegend=multi),
                           row=r, col=c, secondary_y=bool(twin and j == 1))
     fig.update_xaxes(title_text="time (s)")
-    fig.update_layout(height=300 * rows, margin=dict(t=48), font=dict(size=17),
+    fig.update_layout(height=300 * rows, margin=dict(t=48), font=dict(size=20),
                       legend=dict(orientation="h", y=1.04))
     return fig
 
@@ -390,12 +398,12 @@ def scene_and_series_gif(result, show_field=True, wind="off", duration=150):
                 (n1, y1, c1), (n2, y2, c2) = traces
                 axp.plot(t[:k + 1], y1[:k + 1], color=c1, lw=1.7)
                 axp.set_ylabel(n1, color=c1, fontsize=7)
-                axp.tick_params(axis="y", labelcolor=c1, labelsize=7)
+                axp.tick_params(axis="y", labelcolor=c1, labelsize=11)
                 axp.set_ylim(*yr[i][0])
                 ax2 = axp.twinx()
                 ax2.plot(t[:k + 1], y2[:k + 1], color=c2, lw=1.7)
                 ax2.set_ylabel(n2, color=c2, fontsize=7)
-                ax2.tick_params(axis="y", labelcolor=c2, labelsize=7)
+                ax2.tick_params(axis="y", labelcolor=c2, labelsize=11)
                 ax2.set_ylim(*yr[i][1])
             else:
                 for name, ys, col in traces:
@@ -405,8 +413,8 @@ def scene_and_series_gif(result, show_field=True, wind="off", duration=150):
                     axp.legend(fontsize=6, loc="upper left")
             axp.set_xlim(*xr)
             axp.axvline(t[k], color="#AAB2C0", lw=0.7, ls=":")
-            axp.set_title(title, fontsize=11)
-            axp.tick_params(axis="x", labelsize=7)
+            axp.set_title(_mpl_label(title), fontsize=13)
+            axp.tick_params(axis="x", labelsize=11)
         buf = io.BytesIO()
         fig.savefig(buf, format="png", dpi=90)
         plt.close(fig)
@@ -449,9 +457,9 @@ def climate_timeseries(ts, ctrl=None):
                                      showlegend=i == 0), row=i + 1, col=1)
     fig.update_xaxes(title_text="time (s)")
     fig.update_layout(height=250 * len(panels), margin=dict(t=48),
-                      font=dict(size=17),
-                      legend=dict(orientation="h", y=1.05, font=dict(size=15)))
-    fig.update_annotations(font_size=18)
+                      font=dict(size=20),
+                      legend=dict(orientation="h", y=1.05, font=dict(size=18)))
+    fig.update_annotations(font_size=20)
     return fig
 
 
@@ -506,8 +514,8 @@ def climate_scene_series_gif(result, ctrl_ts=None, duration=160):
             axp.set_xlim(*xr)
             axp.set_ylim(*yr[i])
             axp.axvline(t[kk], color="#AAB2C0", lw=0.7, ls=":")
-            axp.set_title(f"{title} ({unit})" if unit else title, fontsize=11)
-            axp.tick_params(labelsize=7)
+            axp.set_title(_mpl_label(f"{title} ({unit})" if unit else title), fontsize=13)
+            axp.tick_params(labelsize=11)
             if ctrl_ts is not None and i == 0:
                 axp.legend(fontsize=6, loc="upper left")
         buf = io.BytesIO()
@@ -536,7 +544,7 @@ def bergeron_figure(result):
                              line=dict(color="#0FB5C4", width=2.5)))
     fig.update_xaxes(title_text="time (s)")
     fig.update_yaxes(title_text="domain water (g/kg, summed)")
-    fig.update_layout(height=380, margin=dict(t=30),
+    fig.update_layout(height=430, margin=dict(t=34), font=dict(size=18),
                       legend=dict(orientation="h", y=1.08))
     return fig
 
@@ -693,8 +701,8 @@ def parcel_timeseries(runs, dt):
     fig.update_yaxes(type="log", row=3, col=2)
     fig.update_xaxes(title_text="Time (s)", row=3, col=1)
     fig.update_xaxes(title_text="Time (s)", row=3, col=2)
-    fig.update_layout(height=900, font=dict(size=17),
-                      legend=dict(orientation="h", y=-0.08, font=dict(size=15)),
+    fig.update_layout(height=900, font=dict(size=20),
+                      legend=dict(orientation="h", y=-0.08, font=dict(size=18)),
                       margin=dict(t=40))
     return fig
 
@@ -722,10 +730,10 @@ def parcel_dsd_contour(out, dt):
                            bgcolor="rgba(255,255,255,0.65)")
     fig.update_yaxes(type="log", title_text="Radius r (µm)")
     fig.update_xaxes(title_text="Time (min)")
-    fig.update_layout(height=560, font=dict(size=17),
+    fig.update_layout(height=560, font=dict(size=20),
                       title="Droplet-size distribution vs time — watch aerosol "
                             "activate, grow, and cross into rain",
-                      legend=dict(orientation="h", y=1.05, font=dict(size=15)))
+                      legend=dict(orientation="h", y=1.05, font=dict(size=18)))
     return fig
 
 
@@ -752,7 +760,7 @@ def parcel_dsd_spectra(out, dt):
             hovertemplate="r=%{x:.2f} µm<br>dN=%{y:.3g} cm⁻³<extra></extra>"))
     fig.update_xaxes(type="log", title_text="Radius r (µm)")
     fig.update_yaxes(type="log", title_text="dN (cm⁻³)")
-    fig.update_layout(height=520,
+    fig.update_layout(height=560, font=dict(size=18),
                       title="Size spectra through the ascent — narrowing by "
                             "condensation, then a collision tail",
                       legend=dict(orientation="v", x=1.02, y=1.0,
@@ -785,17 +793,17 @@ def parcel_particles(M, A):
     fig.update_xaxes(type="log", title_text="Droplet radius r (µm)")
     fig.update_yaxes(type="log", title_text="multiplicity A", secondary_y=False)
     fig.update_yaxes(title_text="Σ A in bin", secondary_y=True)
-    fig.update_layout(height=520, title="Final super-droplet distribution",
+    fig.update_layout(height=560, font=dict(size=18), title="Final super-droplet distribution",
                       legend=dict(orientation="h", y=1.05))
     return fig
 
 
 def parcel_profiles(runs):
-    """Trajectory profiles vs height: T, supersaturation, mean radius with its
-    spread, and the cloud/rain water split — the whole ascent read vertically."""
+    """Trajectory profiles vs height: T, supersaturation, mean radius and its
+    spread (SEPARATE traces), and the cloud/rain water split."""
     fig = make_subplots(rows=2, cols=2, subplot_titles=(
         "Temperature T (°C)", "Supersaturation S (%)",
-        "Droplet radius mean ± σ<sub>r</sub> (µm)",
+        "Mean radius & σ<sub>r</sub> (µm)",
         "q<sub>c</sub> & q<sub>r</sub> (g/kg)"))
     multi = len(runs) > 1
     dashes = ["solid", "dash", "dot", "dashdot"]
@@ -808,35 +816,38 @@ def parcel_profiles(runs):
         rs = np.array([out[k].get("rv_std", 0.0) for k in sorted(out)])
         _, qc = _series(out, "qc")
         _, qr = _series(out, "qr")
-        z = np.asarray(z); rv = np.asarray(rv)
+        z = np.asarray(z)
         S = (np.asarray(rh) - 1.0) * 100.0
-        nm = label if multi else ""
-        fig.add_trace(go.Scatter(x=T, y=z, mode="lines", line=dict(dash=dash),
-                                 name=(nm or "T"), legendgroup=label,
-                                 showlegend=multi), row=1, col=1)
-        fig.add_trace(go.Scatter(x=S, y=z, mode="lines", line=dict(dash=dash),
-                                 name=(nm or "S"), legendgroup=label,
+        sfx = f" ({label})" if multi else ""
+        fig.add_trace(go.Scatter(x=T, y=z, mode="lines",
+                                 line=dict(dash=dash, color="#0c1626", width=2.4),
+                                 showlegend=False), row=1, col=1)
+        fig.add_trace(go.Scatter(x=S, y=z, mode="lines",
+                                 line=dict(dash=dash, color="#0c1626", width=2.4),
                                  showlegend=False), row=1, col=2)
-        fig.add_trace(go.Scatter(x=rv, y=z, mode="lines", line=dict(dash=dash),
-                                 name=(nm or "mean r"), legendgroup=label,
-                                 showlegend=False), row=2, col=1)
-        fig.add_trace(go.Scatter(
-            x=np.concatenate([rv - rs, (rv + rs)[::-1]]),
-            y=np.concatenate([z, z[::-1]]),
-            fill="toself", mode="none", fillcolor="rgba(45,107,224,0.12)",
-            showlegend=False, hoverinfo="skip", legendgroup=label), row=2, col=1)
-        fig.add_trace(go.Scatter(x=qc, y=z, mode="lines", line=dict(dash=dash),
-                                 name=("q<sub>c</sub> " + nm).strip(),
-                                 legendgroup=label, showlegend=True), row=2, col=2)
+        fig.add_trace(go.Scatter(x=np.asarray(rv), y=z, mode="lines",
+                                 name="mean r" + sfx,
+                                 line=dict(dash=dash, color="#2D6BE0", width=2.6),
+                                 showlegend=True), row=2, col=1)
+        fig.add_trace(go.Scatter(x=rs, y=z, mode="lines",
+                                 name="σ<sub>r</sub>" + sfx,
+                                 line=dict(dash=dash, color="#f59f00", width=2.6),
+                                 showlegend=True), row=2, col=1)
+        fig.add_trace(go.Scatter(x=qc, y=z, mode="lines",
+                                 name="q<sub>c</sub>" + sfx,
+                                 line=dict(dash=dash, color="#2D6BE0", width=2.6),
+                                 showlegend=True), row=2, col=2)
         fig.add_trace(go.Scatter(x=qr, y=z, mode="lines",
-                                 line=dict(dash=dash, color="#E8743B"),
-                                 name=("q<sub>r</sub> " + nm).strip(),
-                                 legendgroup=label, showlegend=True), row=2, col=2)
+                                 name="q<sub>r</sub>" + sfx,
+                                 line=dict(dash=dash, color="#E8743B", width=2.6),
+                                 showlegend=True), row=2, col=2)
     for r in (1, 2):
         fig.update_yaxes(title_text="z (m)", row=r, col=1)
-    fig.update_layout(height=760, font=dict(size=17),
-                      legend=dict(orientation="h", y=-0.07, font=dict(size=13)))
-    fig.update_annotations(font_size=18)
+    # legend sits BELOW the bottom-row panels it describes (mean r / σ_r / q_c / q_r)
+    fig.update_layout(height=820, font=dict(size=20),
+                      legend=dict(orientation="h", x=0.5, xanchor="center",
+                                  y=-0.06, font=dict(size=18)))
+    fig.update_annotations(font_size=20)
     return fig
 
 
