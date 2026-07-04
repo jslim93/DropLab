@@ -732,41 +732,93 @@ def render_climate():
 # LECTURE — guided, narrated lessons
 # ========================================================================= #
 _LESSONS = {
+    # Warm-parcel lessons follow the same Predict→Observe→Explain arc as the
+    # mixed-phase/showcase lessons, with ONE live control each: the lesson's
+    # "notice" line must always name something the student can actually turn.
     "1 · Aerosol activation": dict(
+        objective="predict how the activated droplet number N_c responds to "
+                  "updraft speed, and explain why via peak supersaturation.",
         text="As the parcel rises it cools and supersaturation grows. Once it "
              "crosses each particle's critical value, that haze particle "
              "*activates* into a cloud droplet. Watch Nc climb with updraft/RH.",
         eqn=r"S_{crit} \propto \sqrt{A^3 / B}",
         notice="Raise the updraft and watch more aerosol activate into droplets.",
+        predict=("If you double the updraft speed w, the activated droplet "
+                 "number N_c will…",
+                 ["Increase — faster cooling → higher peak S → smaller aerosol activate",
+                  "Stay the same — N_c is fixed by the aerosol population",
+                  "Decrease — the parcel has less time to activate"], 0),
+        knob=dict(label="Updraft w (m/s)", lo=0.2, hi=5.0, default=1.0,
+                  step=0.1, param="w"),
         run=dict(collisions=False, preset="default")),
     "2 · Condensational growth": dict(
+        objective="see that diffusional growth *narrows* the droplet spectrum, "
+                  "because dr/dt ∝ 1/r lets small drops catch up.",
         text="With collisions OFF, droplets grow only by vapour diffusion. Small "
              "droplets grow faster than large ones (dr/dt ∝ 1/r), so the spectrum "
              "**narrows** with height.",
         eqn=r"\frac{dr}{dt} = \frac{G\,S}{r}",
-        notice="The DSD spectrum tightens as the parcel rises.",
+        notice="Change the updraft and watch the spectrum-width σ_r: growth "
+               "tightens the DSD no matter how fast you rise.",
+        predict=("With collisions off, as the parcel rises the spectral width "
+                 "σ_r will…",
+                 ["Narrow — small drops grow fastest and catch up",
+                  "Broaden — big drops pull ahead",
+                  "Stay constant — every drop grows at the same rate"], 0),
+        knob=dict(label="Updraft w (m/s)", lo=0.2, hi=5.0, default=1.0,
+                  step=0.1, param="w"),
         run=dict(collisions=False, preset="default")),
     "3 · Collision → rain": dict(
+        objective="connect aerosol number to rain formation: more CCN → smaller "
+                  "droplets → collision–coalescence stalls.",
         text="With collisions ON (maritime aerosol), larger droplets fall faster "
              "and collect smaller ones. The distribution **broadens** and a rain "
              "mode (Nr, qr) develops.",
         eqn=r"K(r_1,r_2) = \pi (r_1+r_2)^2\,|v_1-v_2|\,E",
-        notice="A second peak appears at large radii — that is rain.",
+        notice="Pollute the air (more small CCN) and watch the total rain "
+               "collapse; clean it (×0.25) and the parcel rains out completely.",
+        predict=("Make the air heavily polluted — ×8 more small CCN (same "
+                 "updraft, same water). The total rain produced will…",
+                 ["Decrease — many small droplets collide too slowly to make rain",
+                  "Increase — more droplets means more collisions",
+                  "Stay the same — rain only depends on total water"], 0),
+        knob=dict(label="Small-CCN (accumulation-mode) number ×", lo=0.25,
+                  hi=8.0, default=1.0, step=0.25, param="n_mult"),
         run=dict(collisions=True, preset="maritime")),
     "4 · Maritime vs continental": dict(
+        objective="run the SAME updraft through two real aerosol regimes and "
+                  "identify which one rains — the aerosol–precipitation link.",
         text="Same updraft, different aerosol: maritime air has *few large* CCN "
              "that rain quickly; continental air has *many small* CCN that make "
              "many tiny droplets and **suppress** rain at the same water content.",
         eqn=r"N_c \uparrow \Rightarrow \bar r \downarrow \Rightarrow \text{rain suppressed}",
-        notice="Compare the two final spectra — narrow vs broad.",
+        notice="Compare the two final spectra — narrow vs broad — and try a "
+               "different updraft: does the contrast survive?",
+        predict=("Same updraft, same water content: which parcel makes rain "
+                 "first?",
+                 ["Maritime — few large CCN grow big enough to collide",
+                  "Continental — more droplets, more collisions",
+                  "Both at the same time — rain depends only on water content"], 0),
+        knob=dict(label="Updraft w (m/s), applied to BOTH parcels", lo=0.2,
+                  hi=5.0, default=1.0, step=0.1, param="w"),
         run=dict(collisions=True, preset="compare")),
     "5 · Entrainment mixing (IHMD)": dict(
+        objective="distinguish homogeneous from inhomogeneous mixing by what "
+                  "each one does to N_c and mean radius.",
         text="Dry environmental air is entrained and evaporates cloud water. "
              "*Homogeneous* mixing (IHMD=0) shrinks every droplet but keeps the "
              "number; *inhomogeneous* (IHMD=1) evaporates whole droplets but keeps "
              "the survivors' size.",
         eqn=r"N_c / N_{c,0} = \left(q_c / q_{c,0}\right)^{\mathrm{IHMD}}",
-        notice="IHMD=0 keeps Nc while r shrinks; IHMD=1 drops Nc.",
+        notice="Turn the entrainment strength up and compare the three IHMD "
+               "curves: 0 keeps Nc while r shrinks; 1 drops Nc.",
+        predict=("Which mixing scenario keeps the droplet NUMBER but shrinks "
+                 "every drop?",
+                 ["Homogeneous (IHMD=0) — all drops share the evaporation",
+                  "Inhomogeneous (IHMD=1) — whole drops evaporate",
+                  "Neither — entrainment always removes drops"], 0),
+        knob=dict(label="Entrainment strength λ (s⁻¹)", lo=1e-4, hi=2e-3,
+                  default=5e-4, step=1e-4, param="lambda_ent", fmt="%.4f"),
         run=dict(collisions=False, preset="ihmd")),
 }
 
@@ -776,8 +828,12 @@ def render_lecture():
 
     theme.apply("Lecture", "📘")
     theme.header("04 · Guided", "Lecture mode",
-                 "Narrated, linear lessons. Pick one, read what to notice, then "
-                 "step through the fixed scenario.", accent=theme.MODE_ACCENT["lecture"])
+                 "Narrated lessons: read the objective, commit to a prediction, "
+                 "then turn the lesson's control and watch the model answer.",
+                 accent=theme.MODE_ACCENT["lecture"])
+    st.caption("🚧 Lecture mode is still under active development — lessons, "
+               "controls, and self-checks are being expanded. For free "
+               "experimentation use the Parcel / 2-D / Climate sandboxes.")
 
     # curriculum order (EDU_FRAMEWORK §4): warm parcel 5 → mixed-phase 4 → showcase 4
     # group the flat lesson list so students see the intended progression
@@ -800,8 +856,28 @@ def render_lecture():
     T0, P0, RH, w = 293.2, 1013.0e2, 0.92, 1.0
 
     st.subheader(lesson)
+    st.markdown(f"🎯 **Objective** — by the end of this lesson you can "
+                f"{L['objective']}")
     st.markdown(L["text"])
     st.latex(L["eqn"])
+
+    # ② Predict — commit before seeing the run (same POE pattern as the
+    # mixed-phase lessons; index=None forces an actual choice, no default)
+    q, opts, correct = L["predict"]
+    st.markdown(f"**Predict** — {q}")
+    pred = st.radio("Your prediction:", opts, index=None,
+                    key=f"lec_pred_{lesson}", label_visibility="collapsed")
+
+    # ③ the lesson's ONE live control — re-runs immediately (cached per value)
+    k = L["knob"]
+    knob_val = st.slider(f"🎛 Try it: {k['label']}", k["lo"], k["hi"],
+                         k["default"], k["step"], key=f"lec_knob_{lesson}",
+                         format=k.get("fmt", "%g"))
+    if k["param"] == "w":
+        w = float(knob_val)
+    n_mult = float(knob_val) if k["param"] == "n_mult" else 1.0
+    lam = float(knob_val) if k["param"] == "lambda_ent" else 5e-4
+
     st.info(f"**What to notice:** {L['notice']}")
 
     spec = L["run"]
@@ -823,15 +899,56 @@ def render_lecture():
                 o, M, A = cache.run_parcel(0, n_ptcl, nt, dt, T0, P0, RH, w,
                                            "linear", p["N_raw"], p["mu_um"],
                                            p["sig"], p["kappa"], False, False, 0.0,
-                                           5e-4, val)
+                                           lam, val)
                 runs.append((f"IHMD={val:g}", o, M, A))
     else:
         with st.spinner("Running parcel ascent…"):
             p = presets.AEROSOL_PRESETS[spec["preset"]]
+            # the pollution knob scales ONLY the small accumulation mode —
+            # scaling the large (sea-salt) mode too would ADD rain embryos and
+            # invert the suppression signal (verified: x4 all-modes raised q_r)
+            N_run = (p["N_raw"][0] * n_mult,) + tuple(p["N_raw"][1:])
             o, M, A = cache.run_parcel(0, n_ptcl, nt, dt, T0, P0, RH, w, "linear",
-                                       p["N_raw"], p["mu_um"], p["sig"], p["kappa"],
+                                       N_run, p["mu_um"], p["sig"], p["kappa"],
                                        spec["collisions"], False, 0.0, 0.0, 0.0)
             runs = [(spec["preset"], o, M, A)]
+
+    # outcome metrics — the numbers that move when the knob moves
+    def _last(out):
+        return out[max(out)]
+
+    def _peak(out, key):
+        return max(float(v.get(key, 0.0)) for v in out.values())
+
+    mcols = st.columns(len(runs) if len(runs) > 1 else 2)
+    if spec["preset"] == "compare":
+        for c, (nm, o, *_r) in zip(mcols, runs):
+            total_rain = float(_last(o).get("precip", 0.0)) + _last(o)["qr"]
+            c.metric(f"Total rain — {nm}", f"{total_rain:.2f} g/kg",
+                     delta=f"peak N_c {_peak(o, 'NC'):.0f} cm⁻³",
+                     delta_color="off")
+    elif spec["preset"] == "ihmd":
+        for c, (nm, o, *_r) in zip(mcols, runs):
+            c.metric(f"Final N_c — {nm}", f"{_last(o)['NC']:.0f} cm⁻³",
+                     delta=f"mean r {float(_last(o).get('rv', 0.0)):.1f} µm",
+                     delta_color="off")
+    else:
+        o = runs[0][1]
+        mcols[0].metric("Peak activated N_c", f"{_peak(o, 'NC'):.0f} cm⁻³")
+        if spec["collisions"]:
+            # fallen + still-in-parcel: in-parcel q_r alone misses rain that
+            # already sedimented out and reads non-monotonic vs aerosol
+            total_rain = float(_last(o).get("precip", 0.0)) + _last(o)["qr"]
+            mcols[1].metric("Total rain produced (fallen + in parcel)",
+                            f"{total_rain:.2f} g/kg")
+        else:
+            mcols[1].metric("Final spectral width σ_r",
+                            f"{float(_last(o).get('rv_std', 0.0)):.2f} µm")
+
+    if pred is not None:
+        mark = "✅" if pred == opts[correct] else "❌"
+        st.info(f"{mark} Your prediction: **{pred}** — the model shows: "
+                f"**{opts[correct]}**")
 
     tab1, tab2 = st.tabs(["Droplet size distribution", "Time series"])
     with tab1:

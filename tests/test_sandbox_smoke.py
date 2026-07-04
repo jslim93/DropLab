@@ -298,6 +298,22 @@ def test_showcase_lessons_registry():
     assert keys == ["I1", "I2", "I3", "I4", "H1", "S1", "D1", "L1"]
 
 
+def test_warm_lesson_specs():
+    # Warm-parcel lessons are interactive: every lesson must state an
+    # objective, pose a Predict question with a valid correct-answer index,
+    # and wire exactly one live knob whose param the renderer understands.
+    allowed_params = {"w", "n_mult", "lambda_ent"}
+    assert len(modes._LESSONS) == 5
+    for name, L in modes._LESSONS.items():
+        assert L["objective"], name
+        q, opts, correct = L["predict"]
+        assert q and len(opts) >= 2 and 0 <= correct < len(opts), name
+        k = L["knob"]
+        assert k["param"] in allowed_params, name
+        assert k["lo"] < k["default"] <= k["hi"], name
+        assert L["run"]["preset"] in ("default", "maritime", "compare", "ihmd")
+
+
 def test_climate_timeseries_figure():
     out = cache.run_climate(200.0, 0.0, False, "MCB sea-salt", 200.0, 0.1,
                             0.5, 120, 32, 24, 6000)
