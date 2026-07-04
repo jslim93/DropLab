@@ -211,14 +211,36 @@ def render_parcel():
                        f"{ent_start_min + ent_dur_min:g}.")
 
     _lam = lambda_ent if ent_on else 0.0
+    # RUN GATE (박사: recompute only on the button, not on every widget change).
+    # The button stores the current config; rendering always uses the STORED config,
+    # so widget tweaks are inert until ▶ Run parcel is pressed again.
+    _cfg = dict(n_ptcl=n_ptcl, nt=nt, dt=dt, T0=T0, P0=P0, RH=RH, w=w,
+                ascending_mode=ascending_mode, N_raw=tuple(N_raw),
+                mu_um=tuple(mu_um), sig=tuple(sig),
+                kappa=kappa if np.isscalar(kappa) else tuple(kappa),
+                collisions=collisions, switch_TICE=switch_TICE, eps=eps,
+                lam=_lam, ihmd=ihmd, rh_env=rh_env,
+                ent_start=ent_start_min * 60.0, ent_dur=ent_dur_min * 60.0,
+                sedi=sedi_removal, preset=preset, compare=compare_preset)
+    with st.sidebar:
+        if st.button("▶ Run parcel", type="primary", use_container_width=True):
+            st.session_state["parcel_cfg"] = _cfg
+        st.caption("Adjust anything above, then press Run. A repeated config "
+                   "returns instantly from the cache.")
+    cfgr = st.session_state.get("parcel_cfg")
+    if cfgr is None:
+        st.info("Set the controls on the left, then press **▶ Run parcel**.")
+        return
+    preset, compare_preset = cfgr["preset"], cfgr["compare"]
+    nt, dt = cfgr["nt"], cfgr["dt"]
     with st.spinner("Running parcel ascent…"):
         out, M, A = cache.run_parcel(
-            0, n_ptcl, nt, dt, T0, P0, RH, w, ascending_mode,
-            tuple(N_raw), tuple(mu_um), tuple(sig),
-            kappa if np.isscalar(kappa) else tuple(kappa),
-            collisions, switch_TICE, eps, _lam, ihmd,
-            rh_env=rh_env, ent_start=ent_start_min * 60.0,
-            ent_duration=ent_dur_min * 60.0, sedi_removal=sedi_removal)
+            0, cfgr["n_ptcl"], cfgr["nt"], cfgr["dt"], cfgr["T0"], cfgr["P0"],
+            cfgr["RH"], cfgr["w"], cfgr["ascending_mode"],
+            cfgr["N_raw"], cfgr["mu_um"], cfgr["sig"], cfgr["kappa"],
+            cfgr["collisions"], cfgr["switch_TICE"], cfgr["eps"], cfgr["lam"],
+            cfgr["ihmd"], rh_env=cfgr["rh_env"], ent_start=cfgr["ent_start"],
+            ent_duration=cfgr["ent_dur"], sedi_removal=cfgr["sedi"])
 
     last = out[sorted(out)[-1]]
     m = st.columns(5)
@@ -252,14 +274,15 @@ def render_parcel():
         cp = presets.AEROSOL_PRESETS[compare_preset]
         with st.spinner(f"Running the {compare_preset} overlay…"):
             out2, M2, A2 = cache.run_parcel(
-                0, n_ptcl, nt, dt, T0, P0, RH, w, ascending_mode,
+                0, cfgr["n_ptcl"], cfgr["nt"], cfgr["dt"], cfgr["T0"], cfgr["P0"],
+                cfgr["RH"], cfgr["w"], cfgr["ascending_mode"],
                 tuple(float(x) for x in cp["N_raw"]),
                 tuple(float(x) for x in cp["mu_um"]),
                 tuple(float(x) for x in cp["sig"]),
                 float(cp["kappa"]) if np.isscalar(cp["kappa"]) else tuple(cp["kappa"]),
-                collisions, switch_TICE, eps, _lam, ihmd,
-                rh_env=rh_env, ent_start=ent_start_min * 60.0,
-                ent_duration=ent_dur_min * 60.0, sedi_removal=sedi_removal)
+                cfgr["collisions"], cfgr["switch_TICE"], cfgr["eps"], cfgr["lam"],
+                cfgr["ihmd"], rh_env=cfgr["rh_env"], ent_start=cfgr["ent_start"],
+                ent_duration=cfgr["ent_dur"], sedi_removal=cfgr["sedi"])
         runs.append((compare_preset, out2, M2, A2))
     tabs = st.tabs(["Time series", "DSD", "Particle population", "Vertical profiles"])
     with tabs[0]:
@@ -273,8 +296,19 @@ def render_parcel():
         st.plotly_chart(plots.parcel_dsd_contour(out, dt), use_container_width=True)
     with tabs[2]:
         theme.whatami("Each marker is one super-droplet at its radius; size/colour "
-                      "scale with its multiplicity A.")
-        st.plotly_chart(plots.parcel_particles(M, A), use_container_width=True)
+                      "scale with its multiplicity A. Drag the slider to any moment "
+                      "of the ascent.")
+        _ks = sorted(out)
+        _kt = st.select_slider("Time (min)", options=_ks, value=_ks[-1],
+                               format_func=lambda k: f"{k * dt / 60:.1f}",
+                               key="parcel_pop_t")
+        _snapM = out[_kt].get("M_snap"); _snapA = out[_kt].get("A_snap")
+        if _snapM is not None:
+            st.plotly_chart(plots.parcel_particles(np.asarray(_snapM),
+                                                   np.asarray(_snapA)),
+                            use_container_width=True)
+        else:   # older cached runs without snapshots -> final state
+            st.plotly_chart(plots.parcel_particles(M, A), use_container_width=True)
     with tabs[3]:
         theme.whatami("Vertical structure of the ascent.")
         st.plotly_chart(plots.parcel_profiles(runs), use_container_width=True)

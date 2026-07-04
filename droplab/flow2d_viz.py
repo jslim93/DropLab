@@ -53,7 +53,8 @@ def _draw_wind_overlay(ax, flow, frame, style="streamlines", quiver_perturb=True
 
 def draw_frame(ax, flow, frame, field="qc", vmax=None, r_max=50.0,
                max_dots=7000, r_show=2.0, show_aerosol=True, quiver=False,
-               n_arrows=16, quiver_perturb=True, quiver_style="streamlines"):
+               n_arrows=16, quiver_perturb=True, quiver_style="streamlines",
+               drop_cmap="viridis"):
     """Render one snapshot onto a (cleared) axis. Returns the scatter handle.
 
     Unactivated aerosol/haze (r <= r_show µm) is drawn as faint black dots so the
@@ -96,7 +97,7 @@ def draw_frame(ax, flow, frame, field="qc", vmax=None, r_max=50.0,
         idx = idx[np.linspace(0, idx.size - 1, max_dots).astype(int)]
     rsel = rr[idx]
     sizes = 3.0 + 32.0 * np.clip(rsel / r_max, 0.0, 1.0) ** 2   # big = rain
-    sc = ax.scatter(frame["x"][idx], frame["z"][idx], c=rsel, cmap="viridis",
+    sc = ax.scatter(frame["x"][idx], frame["z"][idx], c=rsel, cmap=drop_cmap,
                     s=sizes, vmin=r_show, vmax=r_max, edgecolors="none", alpha=0.85,
                     zorder=2)
     # lightning: draw each branched dielectric-breakdown channel recorded since the
@@ -108,7 +109,7 @@ def draw_frame(ax, flow, frame, field="qc", vmax=None, r_max=50.0,
             continue
         segs = seg.reshape(-1, 2, 2)
         # electric blue-white (NOT yellow -- yellow collides with the viridis rain drops)
-        for lw, col, a in [(5.0, "#7fb0ff", 0.35), (3.2, "white", 0.95), (1.4, "#cfe6ff", 1.0)]:
+        for lw, col, a in [(5.0, "#ff8c00", 0.35), (3.2, "#ffb347", 0.95), (1.4, "#fff1d6", 1.0)]:
             ax.add_collection(LineCollection(segs, colors=col, linewidths=lw, alpha=a,
                                              zorder=4, capstyle="round"))
     ax.set_xlim(0, flow.X)
@@ -321,9 +322,9 @@ def draw_storm_electric(ax, flow, frame, xe, ze, vmax_cloud, lim_charge,
             continue
         segs = seg.reshape(-1, 2, 2)
         # electric blue-white glow + white core (avoid yellow: collides with viridis)
-        ax.add_collection(LineCollection(segs, colors="#7fb0ff", linewidths=5.0, alpha=0.35, zorder=5))
-        ax.add_collection(LineCollection(segs, colors="white", linewidths=3.0, alpha=0.95, zorder=5.1))
-        ax.add_collection(LineCollection(segs, colors="#cfe6ff", linewidths=1.2, alpha=1.0, zorder=5.2))
+        ax.add_collection(LineCollection(segs, colors="#ff8c00", linewidths=5.0, alpha=0.40, zorder=5))
+        ax.add_collection(LineCollection(segs, colors="#ffb347", linewidths=3.0, alpha=0.95, zorder=5.1))
+        ax.add_collection(LineCollection(segs, colors="#fff1d6", linewidths=1.2, alpha=1.0, zorder=5.2))
     ax.set_xlim(0, flow.X)
     ax.set_ylim(0, flow.Z)
     ax.set_xlabel("x (m)")

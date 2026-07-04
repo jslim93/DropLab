@@ -32,10 +32,15 @@ def _analysis(M, A, air_mass):
     NA = np.sum(A[aero]) / air_mass / 1e6
     NC = np.sum(A[cloud]) / air_mass / 1e6
     NR = np.sum(A[rain]) / air_mass / 1e6
-    # number-weighted mean radius of cloud+rain droplets (µm), for the DSD overlay
+    # number-weighted mean radius + spread of cloud+rain droplets (µm)
     big = cloud | rain
-    rv_mean = (np.sum(A[big] * r[big]) / np.sum(A[big]) * 1e6) if big.any() else 0.0
-    return qc, qr, qa, NA, NC, NR, rv_mean
+    if big.any():
+        wsum = np.sum(A[big])
+        rv_mean = np.sum(A[big] * r[big]) / wsum * 1e6
+        rv_std = np.sqrt(np.sum(A[big] * (r[big] * 1e6 - rv_mean) ** 2) / wsum)
+    else:
+        rv_mean, rv_std = 0.0, 0.0
+    return qc, qr, qa, NA, NC, NR, rv_mean, rv_std
 
 
 def dsd_spectrum(M, A, air_mass, n_bins=60, r_min=5e-7, r_max=2e-3):
@@ -149,11 +154,12 @@ def run_soa(seed=0, n_ptcl=2000, nt=1500, dt=1.0, T0=293.2, P0=1013e2, RH=0.92,
                 keep = ~fell
                 M, A, Ns, ka, z_sd = M[keep], A[keep], Ns[keep], ka[keep], z_sd[keep]
         if (t + 1) in collect:
-            qc, qr, qa, NA, NC, NR, rv_mean = _analysis(M, A, air_mass)
+            qc, qr, qa, NA, NC, NR, rv_mean, rv_std = _analysis(M, A, air_mass)
             centers, num = dsd_spectrum(M, A, air_mass)
             e_s = esatw(T); e_a = q * P / (q + r_a / rv)
             out[t + 1] = dict(T=T - 273.15, T_K=T, z=z, RH=e_a / e_s, qv=q * 1e3,
                               qa=qa, qc=qc, qr=qr, NA=NA, NC=NC, NR=NR, rv=rv_mean,
-                              precip=precip_mass / air_mass * 1e3,
-                              dsd_r=centers, dsd_n=num)
+                              rv_std=rv_std, precip=precip_mass / air_mass * 1e3,
+                              dsd_r=centers, dsd_n=num,
+                              M_snap=M.copy(), A_snap=A.copy())
     return out, (M, A)

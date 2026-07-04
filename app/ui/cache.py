@@ -226,7 +226,7 @@ _TWOD_CAP = 16
 
 # Bump when build_twod_config's mapping or the engine physics changes so stale disk
 # entries (e.g. pre-CFL-guard NaN results) can never be served for the same widget args.
-_CFG_VERSION = 4
+_CFG_VERSION = 5
 
 
 def _twod_key(scenario, resolution, nt, dt, collisions, ice, habit,
@@ -473,17 +473,19 @@ def run_climate(background_N, ihmd, seed_on, seed_kind, seed_N, seed_r,
     # per-frame MCB metrics: N_d (cm^-3), albedo, short-wave CRE (W/m^2)
     fr = res["frames"]
     cell_cm3 = flow.dx * flow.dz * depth * 1e6
-    t, nc, alb, cre = [], [], [], []
+    t, nc, alb, cre, reff, prc = [], [], [], [], [], []
     for f in fr:
         of = optics_from_frame(f, flow)
         a = of["albedo_mean"]
         alb.append(a)
         cre.append(toa_forcing(a))
+        reff.append(float(of["reff_mean"]) * 1e6)
+        prc.append(float(f.get("surf_precip", 0.0)))
         cloudy = f["r_um"] > 1.0
         ncell = max(1, int((f["qc"] > 0.01).sum()))
         nc.append(float(f["A"][cloudy].sum()) / (ncell * cell_cm3))
         t.append(float(f["step"]) * dt)
-    ts = dict(t=t, nc=nc, albedo=alb, cre=cre)
+    ts = dict(t=t, nc=nc, albedo=alb, cre=cre, reff=reff, precip=prc)
     meta = dict(X=flow.X, Z=flow.Z, Nx=flow.Nx, Nz=flow.Nz, dx=flow.dx,
                 dz=flow.dz, depth=depth, dt=dt, seed_on=bool(seed_on))
     payload = {

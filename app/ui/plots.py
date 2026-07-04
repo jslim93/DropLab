@@ -105,7 +105,8 @@ def _draw_scene(ax, flow, frame, qc_max, r_max, show_field, wind, dt, scenario):
         frame["qc"] = frame["qc"] * 0.0
     draw_frame(ax, flow, frame, "qc", vmax=qc_max, r_max=r_max,
                show_aerosol=(scenario != "fog"), quiver=(wind != "off"),
-               quiver_style=("arrows" if wind == "arrows" else "streamlines"))
+               quiver_style=("arrows" if wind == "arrows" else "streamlines"),
+               drop_cmap="turbo")
     # ICE overlay: draw frozen super-droplets distinctly ON TOP of the radius-coloured
     # liquid scatter — cyan/white so ice reads at a glance, and, when habit ran,
     # SHAPED by the crystal aspect ratio: plates as wide dashes, columns as tall bars.
@@ -288,11 +289,11 @@ def _twod_panels(result):
         # shared axis so the liquid-down/ice-up crossover reads directly.
         disparate = max(lwp) > 0 and max(iwp) < 0.2 * max(lwp)
         title = ("Water path: Liquid vs ice (ice on right axis)" if disparate
-                 else "Water path: Liquid vs ice (∝ Σ g/kg)")
+                 else "Water path: liquid vs ice (∝ Σ g/kg)")
         panels.append((title, [
-            ("liquid q_c", lwp, "#2D6BE0"), ("ice q_i", iwp, "#0FB5C4")], disparate))
+            ("liquid q<sub>c</sub>", lwp, "#2D6BE0"), ("ice q<sub>i</sub>", iwp, "#0FB5C4")], disparate))
     else:
-        panels.append(("Cloud water LWP (∝ Σ q_c, g/kg)",
+        panels.append(("Cloud water LWP (∝ Σ q<sub>c</sub>, g/kg)",
                        [("LWP", lwp, "#2D6BE0")], False))
     panels.append(("Surface precip (kg, cumulative)",
                    [("precip", [float(f.get("surf_precip", 0.0)) for f in fr],
@@ -318,7 +319,7 @@ def _twod_panels(result):
             nd.append(float(f["A"][cloudy].sum()) / (ncell * cell_cm3))
             rmean.append(float(f["r_um"][cloudy].mean()) if cloudy.any() else 0.0)
         panels.append(("Droplet number N_d & mean radius", [
-            ("N_d (cm⁻³)", nd, "#2f9e44"), ("mean r (µm)", rmean, "#f59f00")], True))
+            ("N<sub>d</sub> (cm⁻³)", nd, "#2f9e44"), ("mean r (µm)", rmean, "#f59f00")], True))
     return t, panels
 
 
@@ -342,7 +343,7 @@ def twod_timeseries(result):
                                      line=dict(color=col), showlegend=multi),
                           row=r, col=c, secondary_y=bool(twin and j == 1))
     fig.update_xaxes(title_text="time (s)")
-    fig.update_layout(height=250 * rows, margin=dict(t=44),
+    fig.update_layout(height=300 * rows, margin=dict(t=48), font=dict(size=17),
                       legend=dict(orientation="h", y=1.04))
     return fig
 
@@ -404,7 +405,7 @@ def scene_and_series_gif(result, show_field=True, wind="off", duration=150):
                     axp.legend(fontsize=6, loc="upper left")
             axp.set_xlim(*xr)
             axp.axvline(t[k], color="#AAB2C0", lw=0.7, ls=":")
-            axp.set_title(title, fontsize=8)
+            axp.set_title(title, fontsize=11)
             axp.tick_params(axis="x", labelsize=7)
         buf = io.BytesIO()
         fig.savefig(buf, format="png", dpi=90)
@@ -421,8 +422,10 @@ def scene_and_series_gif(result, show_field=True, wind="off", duration=150):
 def _climate_panels():
     """The climate-intervention metrics that actually matter for MCB (NOT q_c):
     cloud droplet number, cloud albedo, and the shortwave cloud radiative effect."""
-    return [("Cloud droplet number N_d", "cm⁻³", "nc", "#2f9e44"),
+    return [("Cloud droplet number N<sub>d</sub>", "cm⁻³", "nc", "#2f9e44"),
             ("Cloud albedo", "", "albedo", "#2D6BE0"),
+            ("Effective radius r<sub>eff</sub>", "µm", "reff", "#f59f00"),
+            ("Surface precip (cumulative)", "kg", "precip", "#E8743B"),
             ("Shortwave CRE", "W/m²", "cre", "#C0504D")]
 
 
@@ -445,8 +448,10 @@ def climate_timeseries(ts, ctrl=None):
                                      line=dict(color=col, width=1.8, dash="dot"),
                                      showlegend=i == 0), row=i + 1, col=1)
     fig.update_xaxes(title_text="time (s)")
-    fig.update_layout(height=200 * len(panels), margin=dict(t=40),
-                      legend=dict(orientation="h", y=1.06))
+    fig.update_layout(height=250 * len(panels), margin=dict(t=48),
+                      font=dict(size=17),
+                      legend=dict(orientation="h", y=1.05, font=dict(size=15)))
+    fig.update_annotations(font_size=18)
     return fig
 
 
@@ -490,7 +495,7 @@ def climate_scene_series_gif(result, ctrl_ts=None, duration=160):
         gs = fig.add_gridspec(n, 2, width_ratios=[1.7, 1.0], wspace=0.32, hspace=0.7)
         ax = fig.add_subplot(gs[:, 0])
         _draw_climate_scene(ax, flow, fr, vmax, seed_on)
-        ax.set_title(f"t = {t[kk] / 60.0:.1f} min", fontsize=9)
+        ax.set_title(f"t = {t[kk] / 60.0:.1f} min", fontsize=12)
         for i, (title, unit, k, col) in enumerate(panels):
             axp = fig.add_subplot(gs[i, 1])
             axp.plot(t[:kk + 1], ts[k][:kk + 1], color=col, lw=1.8,
@@ -501,7 +506,7 @@ def climate_scene_series_gif(result, ctrl_ts=None, duration=160):
             axp.set_xlim(*xr)
             axp.set_ylim(*yr[i])
             axp.axvline(t[kk], color="#AAB2C0", lw=0.7, ls=":")
-            axp.set_title(f"{title} ({unit})" if unit else title, fontsize=8)
+            axp.set_title(f"{title} ({unit})" if unit else title, fontsize=11)
             axp.tick_params(labelsize=7)
             if ctrl_ts is not None and i == 0:
                 axp.legend(fontsize=6, loc="upper left")
@@ -676,19 +681,20 @@ def parcel_timeseries(runs, dt):
                 line=dict(color=None if multi else color, dash=dash),
                 legendgroup=label, showlegend=(row == 3)), row=row, col=col)
         add("RH", 1, 1, "#5aa9e6", "RH", 100.0)
-        add("qv", 1, 2, "#2f9e44", "q_v")
+        add("qv", 1, 2, "#2f9e44", "q<sub>v</sub>")
         add("z", 2, 1, "#0c1626", "z")
         add("T_K", 2, 2, "#e8743b", "T")
-        add("qa", 3, 1, "#2d6be0", "q_a (aerosol)")
-        add("qc", 3, 1, "#f59f00", "q_c (cloud)")
-        add("qr", 3, 1, "#2f9e44", "q_r (rain)")
-        add("NA", 3, 2, "#2d6be0", "N_a (aerosol)")
-        add("NC", 3, 2, "#f59f00", "N_c (cloud)")
-        add("NR", 3, 2, "#2f9e44", "N_r (rain)")
+        add("qa", 3, 1, "#2d6be0", "q<sub>a</sub> (aerosol)")
+        add("qc", 3, 1, "#f59f00", "q<sub>c</sub> (cloud)")
+        add("qr", 3, 1, "#2f9e44", "q<sub>r</sub> (rain)")
+        add("NA", 3, 2, "#2d6be0", "N<sub>a</sub> (aerosol)")
+        add("NC", 3, 2, "#f59f00", "N<sub>c</sub> (cloud)")
+        add("NR", 3, 2, "#2f9e44", "N<sub>r</sub> (rain)")
     fig.update_yaxes(type="log", row=3, col=2)
     fig.update_xaxes(title_text="Time (s)", row=3, col=1)
     fig.update_xaxes(title_text="Time (s)", row=3, col=2)
-    fig.update_layout(height=820, legend=dict(orientation="h", y=-0.08),
+    fig.update_layout(height=900, font=dict(size=17),
+                      legend=dict(orientation="h", y=-0.08, font=dict(size=15)),
                       margin=dict(t=40))
     return fig
 
@@ -710,16 +716,16 @@ def parcel_dsd_contour(out, dt):
     for r_line, label in ((1.0, "activation (1 µm): aerosol → cloud"),
                           (25.0, "separation (25 µm): cloud → rain")):
         fig.add_hline(y=r_line, line=dict(color="#94a3b8", width=1, dash="dash"))
-        fig.add_annotation(x=1.0, xref="paper", y=np.log10(r_line), yref="y",
-                           text=label, showarrow=False, xanchor="right",
-                           yanchor="bottom", font=dict(size=11, color="#64748b"),
+        fig.add_annotation(x=0.01, xref="paper", y=np.log10(r_line), yref="y",
+                           text=label, showarrow=False, xanchor="left",
+                           yanchor="bottom", font=dict(size=13, color="#64748b"),
                            bgcolor="rgba(255,255,255,0.65)")
     fig.update_yaxes(type="log", title_text="Radius r (µm)")
     fig.update_xaxes(title_text="Time (min)")
-    fig.update_layout(height=520,
+    fig.update_layout(height=560, font=dict(size=17),
                       title="Droplet-size distribution vs time — watch aerosol "
                             "activate, grow, and cross into rain",
-                      legend=dict(orientation="h", y=1.05))
+                      legend=dict(orientation="h", y=1.05, font=dict(size=15)))
     return fig
 
 
@@ -785,26 +791,52 @@ def parcel_particles(M, A):
 
 
 def parcel_profiles(runs):
-    fig = make_subplots(rows=1, cols=2,
-                        subplot_titles=("Temperature T (°C) vs height",
-                                        "LWC q_c+q_r (g/kg) vs height"))
+    """Trajectory profiles vs height: T, supersaturation, mean radius with its
+    spread, and the cloud/rain water split — the whole ascent read vertically."""
+    fig = make_subplots(rows=2, cols=2, subplot_titles=(
+        "Temperature T (°C)", "Supersaturation S (%)",
+        "Droplet radius mean ± σ<sub>r</sub> (µm)",
+        "q<sub>c</sub> & q<sub>r</sub> (g/kg)"))
     multi = len(runs) > 1
     dashes = ["solid", "dash", "dot", "dashdot"]
-    for j, (label, out, *_rest) in enumerate(runs):
-        dash = dashes[j % len(dashes)]
+    for j2, (label, out, *_rest) in enumerate(runs):
+        dash = dashes[j2 % len(dashes)]
         _, z = _series(out, "z")
         _, T = _series(out, "T")
+        _, rh = _series(out, "RH")
+        _, rv = _series(out, "rv")
+        rs = np.array([out[k].get("rv_std", 0.0) for k in sorted(out)])
         _, qc = _series(out, "qc")
         _, qr = _series(out, "qr")
-        nm = label if multi else None
+        z = np.asarray(z); rv = np.asarray(rv)
+        S = (np.asarray(rh) - 1.0) * 100.0
+        nm = label if multi else ""
         fig.add_trace(go.Scatter(x=T, y=z, mode="lines", line=dict(dash=dash),
                                  name=(nm or "T"), legendgroup=label,
                                  showlegend=multi), row=1, col=1)
-        fig.add_trace(go.Scatter(x=qc + qr, y=z, mode="lines", line=dict(dash=dash),
-                                 name=(nm or "LWC"), legendgroup=label,
+        fig.add_trace(go.Scatter(x=S, y=z, mode="lines", line=dict(dash=dash),
+                                 name=(nm or "S"), legendgroup=label,
                                  showlegend=False), row=1, col=2)
-    fig.update_yaxes(title_text="Height z (m)", row=1, col=1)
-    fig.update_xaxes(title_text="T (°C)", row=1, col=1)
-    fig.update_xaxes(title_text="q_c + q_r (g/kg)", row=1, col=2)
-    fig.update_layout(height=520)
+        fig.add_trace(go.Scatter(x=rv, y=z, mode="lines", line=dict(dash=dash),
+                                 name=(nm or "mean r"), legendgroup=label,
+                                 showlegend=False), row=2, col=1)
+        fig.add_trace(go.Scatter(
+            x=np.concatenate([rv - rs, (rv + rs)[::-1]]),
+            y=np.concatenate([z, z[::-1]]),
+            fill="toself", mode="none", fillcolor="rgba(45,107,224,0.12)",
+            showlegend=False, hoverinfo="skip", legendgroup=label), row=2, col=1)
+        fig.add_trace(go.Scatter(x=qc, y=z, mode="lines", line=dict(dash=dash),
+                                 name=("q<sub>c</sub> " + nm).strip(),
+                                 legendgroup=label, showlegend=True), row=2, col=2)
+        fig.add_trace(go.Scatter(x=qr, y=z, mode="lines",
+                                 line=dict(dash=dash, color="#E8743B"),
+                                 name=("q<sub>r</sub> " + nm).strip(),
+                                 legendgroup=label, showlegend=True), row=2, col=2)
+    for r in (1, 2):
+        fig.update_yaxes(title_text="z (m)", row=r, col=1)
+    fig.update_layout(height=760, font=dict(size=17),
+                      legend=dict(orientation="h", y=-0.07, font=dict(size=13)))
+    fig.update_annotations(font_size=18)
     return fig
+
+
