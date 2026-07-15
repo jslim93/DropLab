@@ -128,13 +128,15 @@ for ih in (0.,0.25,0.5,0.75,1.0):
 chk("IHMD law N/N0=(q/q0)^IHMD (integer)", law_ok, "verified for IHMD in {0,.25,.5,.75,1}")
 def tot_mult(pl): return float(sum(p.A for p in pl if p.M > 0))
 qv,thp,zc = create_env_profiles(290.0,0.010,0.0,95000.0,"Stable")
+# ParameterizedMixing takes the ANALYTIC env (theta_init, lapse, rh_env), not profile arrays
+_ti=float(thp[0]); _lap=float((thp[1]-thp[0])/(zc[1]-zc[0])); _z0=float(zc[0]); _zt=float(zc[-1])
 # Gentle entrainment so the cloud survives; measure TRUE multiplicity sum(A) (condensation
 # never changes A, so only IHMD redistribution can) rather than the thresholded NC count.
 base,plb = run(seed=0, aerosol="default", collisions=False, mixing=None, n_ptcl=1500, nt=600, collect=(600,))
 Abase = tot_mult(plb)
 res={}
 for ih in (0.0,0.5,1.0):
-    m=ParameterizedMixing(3e-4,ih,qv,thp,zc)
+    m=ParameterizedMixing(3e-4,ih,_ti,_lap,0.2,z_init=_z0,z_top=_zt)
     o,plm=run(seed=0, aerosol="default", collisions=False, mixing=m, n_ptcl=1500, nt=600, collect=(600,))
     res[ih]=(tot_mult(plm), mean_radius(plm)*1e6, o[600]["qc"])
 chk("homogeneous(IHMD=0) conserves multiplicity sum(A)", abs(res[0.0][0]-Abase)/max(Abase,1e-9) < 1e-6, f"sumA base={Abase:.3e} ihmd0={res[0.0][0]:.3e}")
@@ -142,8 +144,8 @@ chk("inhomogeneous(IHMD=1) depletes multiplicity", res[1.0][0] < res[0.0][0]*0.9
 chk("multiplicity decreases monotonically with IHMD", res[0.0][0] >= res[0.5][0] >= res[1.0][0]-1e-3, f"sumA={[f'{res[i][0]:.2e}' for i in (0.,0.5,1.)]}")
 chk("mean radius higher at IHMD=1 than IHMD=0", res[1.0][1] > res[0.0][1], f"r(um) ihmd0={res[0.0][1]:.2f} ihmd1={res[1.0][1]:.2f}")
 chk("entrainment reduces cloud water vs baseline", res[0.5][2] < base[600]["qc"], f"qc base={base[600]['qc']:.4f} mixed={res[0.5][2]:.4f}")
-ml,_=run(seed=0,collisions=False,mixing=ParameterizedMixing(5e-4,0.5,qv,thp,zc),n_ptcl=1200,nt=800,collect=(800,))
-mh,_=run(seed=0,collisions=False,mixing=ParameterizedMixing(2e-3,0.5,qv,thp,zc),n_ptcl=1200,nt=800,collect=(800,))
+ml,_=run(seed=0,collisions=False,mixing=ParameterizedMixing(5e-4,0.5,_ti,_lap,0.2,z_init=_z0,z_top=_zt),n_ptcl=1200,nt=800,collect=(800,))
+mh,_=run(seed=0,collisions=False,mixing=ParameterizedMixing(2e-3,0.5,_ti,_lap,0.2,z_init=_z0,z_top=_zt),n_ptcl=1200,nt=800,collect=(800,))
 chk("stronger entrainment removes more water", mh[800]["qc"] <= ml[800]["qc"], f"qc lam=5e-4 {ml[800]['qc']:.4f} >= lam=2e-3 {mh[800]['qc']:.4f}")
 try:
     LEMMixing().apply([],288.,.009,9e4,500.,1.,1.,100.); lem=False

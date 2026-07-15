@@ -64,9 +64,15 @@ h1, h2, h3, h4 {{ font-family: 'Space Grotesk', 'Inter', sans-serif; letter-spac
 [data-testid="stMetricValue"] {{ font-family: 'JetBrains Mono', monospace; font-weight: 600; color: {INK}; }}
 [data-testid="stMetricLabel"] p {{ color: {INK_SOFT}; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; }}
 
+/* give the main column breathing room at the top so the first header line (the mono
+   kicker) is not clipped against the viewport edge — Streamlit's default top padding
+   is too small for the uppercase display kicker. */
+.block-container {{ padding-top: 2.6rem !important; }}
+
 /* the mode header band */
 .dl-kicker {{ font-family:'JetBrains Mono',monospace; font-size:0.72rem; letter-spacing:0.18em;
-             text-transform:uppercase; color:{INK_SOFT}; margin-bottom:0.15rem; }}
+             text-transform:uppercase; color:{INK_SOFT}; margin-bottom:0.15rem;
+             padding-top:0.1rem; line-height:1.4; }}
 .dl-title {{ font-family:'Space Grotesk',sans-serif; font-size:2.1rem; font-weight:700;
             line-height:1.05; margin:0 0 0.25rem 0; color:{INK}; }}
 .dl-lede {{ color:{INK_SOFT}; font-size:1.02rem; max-width:60ch; margin:0; }}
@@ -118,6 +124,21 @@ def header(kicker: str, title: str, lede: str, accent: str = BOLT) -> None:
 def whatami(text: str) -> None:
     """A short 'what am I looking at' caption rendered as an accented note."""
     st.markdown(f"<div class='dl-look'>{text}</div>", unsafe_allow_html=True)
+
+
+def animated_gif(gif_bytes: bytes, caption: str = "") -> None:
+    """Show an animated GIF at full width WITHOUT losing the animation. st.image with
+    use_container_width re-encodes a resized GIF to a single frame (it freezes), so
+    embed the raw bytes as a base64 <img> whose width is CSS-scaled — the browser then
+    plays every frame and loops."""
+    import base64
+    b64 = base64.b64encode(gif_bytes).decode("ascii")
+    st.markdown(
+        f"<img src='data:image/gif;base64,{b64}' style='width:100%;height:auto;'/>"
+        + (f"<div class='dl-look' style='border:0;background:transparent;"
+           f"padding:0.2rem 0 0.6rem;'>{caption}</div>" if caption else ""),
+        unsafe_allow_html=True,
+    )
 
 
 def app_version() -> str:

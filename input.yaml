@@ -1,4 +1,4 @@
-# PyLCM run configuration (used by:  python run_pylcm.py input.yaml)
+# PyLCM run configuration (used by:  python run.py input.yaml)
 # The Jupyter notebooks remain the primary interface; this drives scripted/batch runs.
 
 parcel:

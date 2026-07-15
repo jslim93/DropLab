@@ -100,8 +100,11 @@ def timesteps_function(n_particles_widget, P_widget, RH_widget, T_widget, w_widg
             # Convert mass output to per mass per sec.
             acc_ts[t+1]  = 1e3 * acc_ts[t+1] / air_mass_parcel / dt
             aut_ts[t+1]  = 1e3 * aut_ts[t+1] / air_mass_parcel / dt
+            # precip is documented as an AMOUNT (g/kg per step), not a rate — it was
+            # left as raw kg per parcel, a factor-1000 misread against its label.
+            precip_ts[t+1] = 1e3 * precip_ts[t+1] / air_mass_parcel
         # Analysis
-        spectra_arr[t+1],qa_ts[t+1], qc_ts[t+1],qr_ts[t+1], na_ts[t+1], nc_ts[t+1], nr_ts[t+1], particles_array[t+1], rc_liq_avg_array[t+1], rc_liq_std_array[t+1], r_liq_avg_array[t+1], r_liq_std_array[t+1], particles_c_array[t+1] = ts_analysis(particles_list,air_mass_parcel,rm_spec, n_bins, n_particles)
+        spectra_arr[t+1],qa_ts[t+1], qc_ts[t+1],qr_ts[t+1], na_ts[t+1], nc_ts[t+1], nr_ts[t+1], particles_array[t+1], rc_liq_avg_array[t+1], rc_liq_std_array[t+1], r_liq_avg_array[t+1], r_liq_std_array[t+1], particles_c_array[t+1] = ts_analysis(particles_list,air_mass_parcel,rm_spec, n_bins, n_particles,rho_parcel)
         RH_parcel = (q_parcel * P_parcel / (q_parcel + r_a / rv)) / esatw( T_parcel ) 
         
         # Saving values of T_parcel, RH_parcel, q_parcel, z_parcel for every timestep (needed for plots)

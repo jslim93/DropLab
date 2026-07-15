@@ -21,7 +21,7 @@ References (verbatim from SAM-LCM):
 """
 import numpy as np
 
-from droplab.parameters import rho_ice, rho_liq, l_s, rv, pi, g, muelq
+from droplab.parameters import rho_ice, rho_liq, rho_aero, l_s, rv, pi, g, muelq
 from droplab._igr_table import IGR_T, IGR_G
 
 R_MIN_AXIS = 1.0e-5            # 10 um: below this an ice particle grows isometrically (sphere)
@@ -217,12 +217,17 @@ def reset_melted_shape(hab, phase):
     hab[phase == 0, :] = 0.0
 
 
-def deposit_habit(M, A, phase, cidx, hab,
+def deposit_habit(M, A, Ns, phase, cidx, hab,
                   T_flat, P_flat, S_ice_flat, rho_air_flat, eswi_flat, dt):
     """Habit-resolving ice deposition (replaces the spherical r^2-law when habit is on):
     grows each ice super-droplet's mass by capacitance, evolves (a,c,rho_app)=hab columns,
     and returns the per-super-droplet mass change dM [kg SD-total] for the vapour/heat
-    budget. Mutates M and `hab`."""
+    budget. Mutates M, `phase` and `hab`.
+
+    Sublimation floors at the dry aerosol core (same convention as the spherical
+    _ice_deposition and the liquid path's r_aero floor): a crystal sublimating to its
+    core reverts to AEROSOL -- phase -> 0, M = liquid-convention dry-core mass
+    (= Ns * rho_liq/rho_aero), shape cleared -- instead of becoming an inert M=0 ghost."""
     dM = np.zeros(M.shape[0])
     ice = np.flatnonzero((phase == 1) & (A > 0.0) & (M > 0.0) & (hab[:, 0] > 0.0))
     if ice.size == 0:
@@ -233,11 +238,20 @@ def deposit_habit(M, A, phase, cidx, hab,
     m_new, a_new, c_new, rho_new, dm1 = grow_and_shape(
         m1, hab[ice, 0], hab[ice, 1], hab[ice, 2], T_flat[c], P_flat[c],
         S_ice_flat[c], dt, rho_air_flat[c], w, eswi_flat[c])
-    M[ice] = m_new * A[ice]
-    hab[ice, 0] = a_new
-    hab[ice, 1] = c_new
-    hab[ice, 2] = rho_new
-    dM[ice] = dm1 * A[ice]
+    # dry-core masses per particle: Ns = 4/3 pi rho_aero r_dry^3 A  =>  closed forms
+    m_core_ice = (rho_ice / rho_aero) * Ns[ice] / A[ice]     # core in ice convention
+    m_core_liq = (rho_liq / rho_aero) * Ns[ice] / A[ice]     # core in liquid convention
+    # revert ONLY when sublimating (m_new < m1) AND the ice has retreated to the core;
+    # a freshly frozen sub-core haze crystal that is GROWING must stay ice (see the
+    # spherical _ice_deposition for the same gate).
+    gone = (m_new < m1) & (m_new <= m_core_ice)
+    M[ice] = np.where(gone, m_core_liq, m_new) * A[ice]
+    hab[ice, 0] = np.where(gone, 0.0, a_new)
+    hab[ice, 1] = np.where(gone, 0.0, c_new)
+    hab[ice, 2] = np.where(gone, 0.0, rho_new)
+    if gone.any():
+        phase[ice[gone]] = 0                                  # back to the aerosol pool
+    dM[ice] = M[ice] - m1 * A[ice]                            # exact vapour credit
     return dM
 
 

@@ -132,23 +132,47 @@ def _bilin_periodic(f, xx, zz, dx, dz, Nx, Nz):
             + (1 - fx) * fz * f[i0m, j1c] + fx * fz * f[i1m, j1c])
 
 
+@njit(cache=True)
+def _bilin_w_face(wf, xx, zz, dx, dz, Nx, Nz):
+    """Interpolate the vertical velocity from its STAGGERED z-FACE field wf (Nx, Nz+1):
+    x is cell-centered (periodic), z sits on faces at k*dz. Because wf[:,0]=wf[:,Nz]=0
+    (the rigid, impermeable lids), the interpolated w -> 0 as zz -> 0 or Z: a droplet
+    can never be ADVECTED through the floor/ceiling (the correct impermeable-wall BC).
+    The old code sampled the CELL-CENTERED wc, whose lowest value 0.5*(w0+w1)=0.5*w1
+    is NON-zero at the floor, so surface downdrafts pushed even haze onto z=0 where
+    sedimentation then removed it as spurious 'precipitation'."""
+    xi = xx / dx - 0.5
+    zk = zz / dz                      # z-faces at k*dz -> NO -0.5 cell-center offset
+    i0 = int(math.floor(xi))
+    j0 = int(math.floor(zk))
+    fx = xi - i0
+    fz = zk - j0
+    i0m = i0 % Nx
+    i1m = (i0 + 1) % Nx
+    j0c = min(max(j0, 0), Nz)         # faces run 0..Nz
+    j1c = min(max(j0 + 1, 0), Nz)
+    return ((1 - fx) * (1 - fz) * wf[i0m, j0c] + fx * (1 - fz) * wf[i1m, j0c]
+            + (1 - fx) * fz * wf[i0m, j1c] + fx * fz * wf[i1m, j1c])
+
+
 @njit(parallel=True, cache=True)
-def _advect_periodic(x, z, uc, wc, X, Z, dx, dz, dt):
-    """RK2 droplet advection on cell-centered velocities, PERIODIC in x (positions
-    wrap mod X) and clamped in z. Per-droplet loop, run in PARALLEL across droplets
-    (each writes its own xo[p]/zo[p], no reduction, no RNG) — bit-identical to the
-    serial/vectorised version, ~no temporaries."""
+def _advect_periodic(x, z, uc, wf, X, Z, dx, dz, dt):
+    """RK2 droplet advection, PERIODIC in x (positions wrap mod X) and clamped in z.
+    Horizontal velocity from the cell-centered uc; VERTICAL from the staggered z-face
+    field wf so the flow's advective velocity vanishes exactly at the rigid lids
+    (impermeable-wall BC — see _bilin_w_face). Per-droplet loop in PARALLEL (each
+    writes its own xo[p]/zo[p], no reduction, no RNG)."""
     Nx, Nz = uc.shape
     n = x.shape[0]
     xo = np.empty(n)
     zo = np.empty(n)
     for p in prange(n):
         u1 = _bilin_periodic(uc, x[p], z[p], dx, dz, Nx, Nz)
-        w1 = _bilin_periodic(wc, x[p], z[p], dx, dz, Nx, Nz)
+        w1 = _bilin_w_face(wf, x[p], z[p], dx, dz, Nx, Nz)
         xm = (x[p] + 0.5 * dt * u1) % X
         zm = min(max(z[p] + 0.5 * dt * w1, 0.0), Z)
         u2 = _bilin_periodic(uc, xm, zm, dx, dz, Nx, Nz)
-        w2 = _bilin_periodic(wc, xm, zm, dx, dz, Nx, Nz)
+        w2 = _bilin_w_face(wf, xm, zm, dx, dz, Nx, Nz)
         xo[p] = (x[p] + dt * u2) % X
         zo[p] = min(max(z[p] + dt * w2, 0.0), Z)
     return xo, zo
@@ -184,6 +208,46 @@ def _init_inp(n_super, inp_n_cm3, inp_r_um, inp_sigma, N_modes, seed):
     r_inp = rng.lognormal(np.log(inp_r_um * 1e-6), np.log(inp_sigma), n_inp)
     inp[idx] = 4.0 * pi * r_inp ** 2
     return inp
+
+
+def _init_inp_les(A, M, Ns, inp_frac, inp_n_cm3, inp_r_um, inp_sigma,
+                  N_modes, V_dom, seed):
+    """LES-style INP assignment: spread the INP-bearing fraction over MANY super-droplets
+    (inp_frac of them) at a correspondingly LOW multiplicity, instead of loading a few
+    SDs at the full droplet multiplicity. The physical INP concentration (inp_n_cm3) and
+    the TOTAL aerosol number are both preserved -- the INP-bearing SDs give up multiplicity
+    (weight factor) to represent only inp_n_cm3 real INP between them, and that multiplicity
+    is handed to the non-INP SDs so the aerosol budget is unchanged. Rescaling (A,M,Ns)
+    together keeps every super-droplet's per-particle radius intact (M,Ns both ~ A).
+
+    Returns (A, M, Ns, inp) with A/M/Ns rescaled in place-safe copies. This is how
+    SAM-LCM / LES super-droplet immersion freezing represents a dilute INP population:
+    a large sub-set of low-weight INP-bearing droplets, finely sampling the ice onset,
+    rather than a coarse handful that quantises the ice field."""
+    n_super = A.shape[0]
+    N_tot = float(np.asarray(N_modes, float).sum())        # cm^-3
+    inp_conc = min(inp_n_cm3, N_tot)                        # cannot exceed the aerosol
+    n_inp = int(round(min(max(inp_frac, 0.0), 1.0) * n_super))
+    A = A.copy(); M = M.copy(); Ns = Ns.copy()
+    inp = np.zeros(n_super)
+    if n_inp <= 0 or n_inp >= n_super or inp_conc <= 0.0:
+        # degenerate -> fall back to the plain single-population assignment
+        return A, M, Ns, _init_inp(n_super, inp_n_cm3, inp_r_um, inp_sigma, N_modes, seed)
+    rng = np.random.default_rng(seed + 101)
+    idx = rng.choice(n_super, size=n_inp, replace=False)
+    is_inp = np.zeros(n_super, dtype=bool); is_inp[idx] = True
+    # target real-droplet counts each sub-population must represent
+    real_inp = inp_conc * 1e6 * V_dom                      # INP-bearing droplets
+    real_rest = (N_tot - inp_conc) * 1e6 * V_dom           # the rest of the aerosol
+    mult_inp = real_inp / n_inp                            # low weight factor per INP SD
+    mult_rest = real_rest / (n_super - n_inp)
+    # rescale (A,M,Ns) by target/current multiplicity; radius is preserved (M,Ns ~ A)
+    f = np.where(is_inp, mult_inp / np.maximum(A, 1e-300),
+                 mult_rest / np.maximum(A, 1e-300))
+    A = A * f; M = M * f; Ns = Ns * f
+    r_inp = rng.lognormal(np.log(inp_r_um * 1e-6), np.log(inp_sigma), n_inp)
+    inp[idx] = 4.0 * pi * r_inp ** 2
+    return A, M, Ns, inp
 
 
 def _inject_aerosol(M, A, Ns, ka, x, z, tag, phase, inp, X, depth, spec, seed, tag_id=1):
@@ -296,6 +360,7 @@ def run_flow2d_dynamic(nt=1500, dt=1.5, Nx=96, Nz=72, X=4800.0, Z=3000.0,
                        switch_TICE=True, eps=0.01, switch_kappa_koehler=True,
                        seed=0, collect_every=20, sounding=None, forcing=None,
                        pert_amp=0.1, sediment=True, b_max=0.12, omega_max=0.03,
+                       r_precip_um=40.0,
                        nu_scalar=2.0, periodic_x=True, rad_cool=None,
                        seeding=None, ihmd=0.0, surface_cool=0.0,
                        diurnal_period=None, wind_shear=0.0, on_frame=None, diagnose=None,
@@ -304,7 +369,7 @@ def run_flow2d_dynamic(nt=1500, dt=1.5, Nx=96, Nz=72, X=4800.0, Z=3000.0,
                        sponge_frac=0.0, sponge_tau=300.0,
                        a_bigg=0.66, B_bigg=100.0,
                        inp_n_cm3=0.0, inp_r_um=0.5, inp_sigma=1.4,
-                       inp_species="default",
+                       inp_species="default", inp_frac=None,
                        electrification=False, q_rev_T=263.15, E_breakdown=1.5e5,
                        charge_eff=0.1, q_sc_min=1.0e-5, flash_every=1,
                        flash_neutralize=0.7, flash_radius=2, flash_rearm=0.95,
@@ -352,8 +417,14 @@ def run_flow2d_dynamic(nt=1500, dt=1.5, Nx=96, Nz=72, X=4800.0, Z=3000.0,
     phase = np.zeros(M.shape[0], dtype=np.int8)     # 0 = liquid, 1 = ice (ice=True only)
     # immersed-INP surface area per super-droplet (m^2); 0 = no INP. A base population
     # of INP-bearing super-droplets is present from the start (ABIFM nucleation).
-    inp = (_init_inp(M.shape[0], inp_n_cm3, inp_r_um, inp_sigma, N_modes, seed)
-           if ice else np.zeros(M.shape[0]))
+    # inp_frac (LES-style): spread INP over that fraction of SDs at low weight factor
+    # (finer ice sampling, same concentration + aerosol budget); None -> coarse default.
+    if ice and inp_frac is not None and inp_n_cm3 > 0.0:
+        A, M, Ns, inp = _init_inp_les(A, M, Ns, inp_frac, inp_n_cm3, inp_r_um,
+                                      inp_sigma, N_modes, flow.X * flow.Z * depth, seed)
+    else:
+        inp = (_init_inp(M.shape[0], inp_n_cm3, inp_r_um, inp_sigma, N_modes, seed)
+               if ice else np.zeros(M.shape[0]))
     c_abifm, m_abifm = ABIFM_SPECIES.get(inp_species, ABIFM_SPECIES["default"])
     # per-super-droplet charge [C] (None when off -> zero overhead, bit-identical).
     # Electrification needs riming graupel + ice, so it only does anything with ice on.
@@ -560,8 +631,11 @@ def run_flow2d_dynamic(nt=1500, dt=1.5, Nx=96, Nz=72, X=4800.0, Z=3000.0,
             omega -= dt * damp_z[None, :] * omega
 
         # 3. advect droplets and scalars (+ small eddy diffusion for stability)
+        # vertical advection uses the z-FACE velocity (flow.w, =0 at the lids) so the
+        # flow cannot push droplets through the impermeable floor (see _bilin_w_face);
+        # only sedimentation removes them, gated to precipitation-sized drops below.
         if periodic_x:
-            x, z = _advect_periodic(x, z, uc, wc, flow.X, flow.Z, flow.dx, flow.dz, dt)
+            x, z = _advect_periodic(x, z, uc, flow.w, flow.X, flow.Z, flow.dx, flow.dz, dt)
         else:
             x, z = flow.advect(x, z, dt)
         if lem:                                    # subgrid vertical transport (SAM micro_sgs_uvw):
@@ -577,18 +651,33 @@ def run_flow2d_dynamic(nt=1500, dt=1.5, Nx=96, Nz=72, X=4800.0, Z=3000.0,
                     vt[ic] = _hab.boehm_fallspeed(M[ic] / A[ic], hab[ic, 0], hab[ic, 1],
                                                   hab[ic, 2], T_col[iz[ic]], rho_a[ic])
             z = z - vt * dt
-            keep = z > 0.0                          # drops reaching the ground precipitate OUT
-            if not keep.all():                     # (else they pile up -> q_c/buoyancy spike -> blow-up)
-                surf_precip += float(M[~keep].sum())
-                M, A, Ns, ka = M[keep], A[keep], Ns[keep], ka[keep]
-                x, z, tag, phase, inp = x[keep], z[keep], tag[keep], phase[keep], inp[keep]
-                if charge is not None:               # charge leaves with the precipitation
-                    charge_to_ground += float(charge[~keep].sum())
-                    charge = charge[keep]
-                if hab is not None:
-                    hab = hab[keep]
-                if lem:                              # LEM state follows its super-droplet
-                    eta_sd, w_sgs = eta_sd[keep], w_sgs[keep]
+            # Only PRECIPITATION-sized drops leaving through the floor are removed (real
+            # rain/snow). Sub-precipitation drops (haze/cloud droplets) that reach z<=0
+            # by slow settling are NOT precipitation -- they are reflected to the floor
+            # and stay suspended (with the impermeable-wall face-w advection above, the
+            # flow no longer drives them there, so this catches only genuine settling).
+            # This stops the old spurious-precipitation sink that bled the aerosol budget
+            # (a downdraft-pinned haze SD was removed as 'rain' in rain-free runs).
+            below = z <= 0.0
+            if below.any():
+                r_sd = np.where(A > 0.0,
+                                (M / (A * 4.0 / 3.0 * pi *
+                                      np.where(phase == 1, rho_ice, rho_liq))) ** (1.0 / 3.0),
+                                0.0)
+                precip = below & (r_sd > r_precip_um * 1.0e-6)
+                z[below & ~precip] = 0.0            # sub-precip settling drops held at floor
+                if precip.any():                   # remove only the precipitation-sized drops
+                    keep = ~precip
+                    surf_precip += float(M[precip].sum())
+                    M, A, Ns, ka = M[keep], A[keep], Ns[keep], ka[keep]
+                    x, z, tag, phase, inp = x[keep], z[keep], tag[keep], phase[keep], inp[keep]
+                    if charge is not None:           # charge leaves with the precipitation
+                        charge_to_ground += float(charge[precip].sum())
+                        charge = charge[keep]
+                    if hab is not None:
+                        hab = hab[keep]
+                    if lem:                          # LEM state follows its super-droplet
+                        eta_sd, w_sgs = eta_sd[keep], w_sgs[keep]
         if anelastic:
             # anelastic scalar transport conserves rho0*scalar: d(rho0 s)/dt + div(rho0 s V)=0
             # -> Ds/Dt=0. Plain flux-form div(sV) would instead give Ds/Dt=-s div(V), spuriously
@@ -736,11 +825,11 @@ def run_flow2d_dynamic(nt=1500, dt=1.5, Nx=96, Nz=72, X=4800.0, Z=3000.0,
                     P_flat = np.tile(P_col, Nx)
                     rho_air_flat = (P_col[None, :] / (r_a * T)).ravel()
                     eswi_flat = (_esatw_v(T) / e_si).ravel()
-                    dM_ice = _hab.deposit_habit(M, A, phase, cidx, hab, T.ravel(), P_flat,
+                    dM_ice = _hab.deposit_habit(M, A, Ns, phase, cidx, hab, T.ravel(), P_flat,
                                                 S_ice, rho_air_flat, eswi_flat, dt_sub)
                 else:                                  # spherical r^2-law
                     dM_ice = np.zeros(M.shape[0])
-                    _ice_deposition(M, A, phase, cidx, S_ice, G_ice_c, dt_sub, dM_ice)
+                    _ice_deposition(M, A, Ns, phase, cidx, S_ice, G_ice_c, dt_sub, dM_ice)
                 _scatter_dM_ice(dM_ice, cidx, dM_cell_i)
                 if "dep" in _acc: _acc["dep"] += np.maximum(dM_cell_i, 0.0)
                 if "sub" in _acc: _acc["sub"] += -np.minimum(dM_cell_i, 0.0)
@@ -800,10 +889,12 @@ def run_flow2d_dynamic(nt=1500, dt=1.5, Nx=96, Nz=72, X=4800.0, Z=3000.0,
                     np.add.at(sc, cidx_e, np.where((phase == 0) & (T_e.ravel()[cidx_e] < 273.15),
                                                    M, 0.0))
                     qsc = sc / air_mass_cell
+                    rho_air_e = P_col[None, :] / (r_a * T_e)
                     _elec.deposit_charge(charge, M, A, phase, cidx_e, Nx * Nz,
                                          T_e.ravel(), qsc, q_sc_min, q_rev_T, dt,
                                          flow.dx * flow.dz * depth, Nx, Nz, flow.dz,
-                                         charge_eff=charge_eff)
+                                         charge_eff=charge_eff, hab=hab,
+                                         rho_air_flat=rho_air_e.ravel())
                     if (t + 1) % flash_every == 0:
                         rho_q = _elec.charge_density(charge, cidx_e, Nx, Nz,
                                                      flow.dx * flow.dz * depth)

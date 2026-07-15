@@ -12,8 +12,16 @@ from droplab.parcel import *
 from droplab.condensation import *
 from droplab.collision import *
  
-def ts_analysis(particles_list,air_mass_parcel,log_edges, nbins, n_particles):
+def ts_analysis(particles_list,air_mass_parcel,log_edges, nbins, n_particles,rho_parcel):
     # Timesteps analysis: Performs calculations of q_x mixing ratios and n_x number densities and the spectra
+    #
+    # Mixing ratios (qc/qr/qa) stay mass-normalized (per kg dry air) -- physically
+    # correct, materially conserved under adiabatic expansion. Number concentrations
+    # (NA/NC/NR, cm^-3) and the size spectrum are per-VOLUME quantities, so they are
+    # normalized by V_parcel = air_mass_parcel/rho_parcel (which grows as the parcel
+    # ascends and rho_parcel falls) -- NOT by the fixed dry-air mass, which silently
+    # assumes rho_air==1 kg/m^3 and never dilutes with height.
+    V_parcel = air_mass_parcel / rho_parcel
     nbins = nbins - 1 # Number of bins are 1 smaller than number of edges.
     
     spec = np.zeros(nbins)
@@ -57,7 +65,7 @@ def ts_analysis(particles_list,air_mass_parcel,log_edges, nbins, n_particles):
             particles_c.append(0)
             particles_ac.append(0)
             
-        spec = get_spec(nbins,spec,log_edges,r_liq,particle.A,air_mass_parcel)
+        spec = get_spec(nbins,spec,log_edges,r_liq,particle.A,V_parcel)
         
         # Append the radius of the current particle to the list
         particles_r[particle.id] = r_liq
@@ -93,10 +101,10 @@ def ts_analysis(particles_list,air_mass_parcel,log_edges, nbins, n_particles):
     qr = qr_mass / air_mass_parcel *1e3
     qa = qa_mass / air_mass_parcel *1e3
     
-    # Unit conversion of number concentrations
-    NA = NA / air_mass_parcel /1e6
-    NC = NC / air_mass_parcel /1e6
-    NR = NR / air_mass_parcel /1e6
+    # Unit conversion of number concentrations (per real parcel volume, not mass)
+    NA = NA / V_parcel /1e6
+    NC = NC / V_parcel /1e6
+    NR = NR / V_parcel /1e6
     
     # Appended (kept at the END so existing positional unpacking of the first 10 is unaffected):
     #   r_liq_avg, r_liq_std  = all-droplet weighted mean/std radius
@@ -104,11 +112,11 @@ def ts_analysis(particles_list,air_mass_parcel,log_edges, nbins, n_particles):
     return(spec,qa, qc,qr, NA, NC, NR, particles_r, rc_liq_avg, rc_liq_std,
            r_liq_avg, r_liq_std, particles_rc)
 
-def get_spec(nbins,spectra_arr,log_edges,r_liq,weight_factor,air_mass_parcel):
-    # Computes array of the spectra
+def get_spec(nbins,spectra_arr,log_edges,r_liq,weight_factor,V_parcel):
+    # Computes array of the spectra (number density per unit VOLUME, not mass)
     bin_idx = np.searchsorted(log_edges, r_liq, side='right') - 1
     if 0 <= bin_idx < nbins:
-        spectra_arr[bin_idx] += weight_factor / air_mass_parcel / (rr_spec[bin_idx] - rl_spec[bin_idx])*rm_spec[bin_idx]
+        spectra_arr[bin_idx] += weight_factor / V_parcel / (rr_spec[bin_idx] - rl_spec[bin_idx])*rm_spec[bin_idx]
 
     return spectra_arr
 
@@ -116,7 +124,9 @@ def save_model_output_variables(time_array, RH_parcel_array, q_parcel_array, T_p
     # Saves the output arrays to a csv file in the subfolder 'Output'
     # Optional filename can be given
     
-    output_variables_array = np.stack((time_array, RH_parcel_array, q_parcel_array*1000, T_parcel_array, z_parcel_array, qa_ts*1000, qc_ts*1000, qr_ts*1000, na_ts/1e6, nc_ts/1e6, nr_ts/1e6), axis=-1)
+    # na_ts/nc_ts/nr_ts already arrive in cm^-3 from ts_analysis() -- no further /1e6 here
+    # (that was a duplicate unit conversion on top of ts_analysis's own, a factor-of-1e6 bug).
+    output_variables_array = np.stack((time_array, RH_parcel_array, q_parcel_array*1000, T_parcel_array, z_parcel_array, qa_ts*1000, qc_ts*1000, qr_ts*1000, na_ts, nc_ts, nr_ts), axis=-1)
     
     # Conversion to pandas format
     output_variables_dataframe = pd.DataFrame(output_variables_array)

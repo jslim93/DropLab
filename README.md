@@ -103,25 +103,85 @@ configurations — seconds to a couple of minutes each on a laptop).
 
 ## Install
 
-```bash
-conda env create -f environment.yml && conda activate droplab && pip install -e .
-# or, into an existing Python >= 3.11 environment:
-pip install -e . && pip install -r requirements.txt
+You need **Python 3.11 or newer**. Everything is cross-platform — the only difference
+between operating systems is the exact command name (`python` vs `py` vs `python3`).
+
+**Don't want to install anything?** Skip to [Run in a browser](#run-in-a-browser-no-install)
+below — the app can run on a free web host, so anyone can use it from a link with no
+Python at all.
+
+### 1. Get Python (once)
+
+| OS | How |
+|----|-----|
+| **Windows** | Install from [python.org](https://www.python.org/downloads/) and **tick "Add Python to PATH"** during setup (or get it from the Microsoft Store). |
+| **macOS** | `brew install python@3.11`, or the [python.org](https://www.python.org/downloads/) installer. |
+| **Linux** | `sudo apt install python3 python3-pip python3-venv` (Debian/Ubuntu), or your distro's equivalent. |
+
+### 2. Download DropLab and install it
+
+Grab the code (`git clone https://github.com/jslim93/DropLab.git` or download the ZIP
+from GitHub and unzip), open a terminal **in that folder**, then run the three lines for
+your OS. The middle line makes an isolated environment so DropLab's packages don't touch
+the rest of your system.
+
+**Windows** (PowerShell):
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+py -m pip install -r requirements.txt
 ```
 
-> `numpy` and `numba` are version-coupled; keep the pins in `environment.yml` /
-> `requirements.txt` paired.
+**macOS / Linux**:
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -r requirements.txt
+```
+
+> First `pip install` downloads NumPy/SciPy/Numba/Streamlit (~1–2 min). `numpy` and
+> `numba` are version-coupled; keep the pins in `requirements.txt` paired.
+>
+> **conda users** can instead do:
+> `conda env create -f environment.yml && conda activate droplab && pip install -e .`
 
 ## How to run
 
 **1. The sandbox app (recommended first stop)** — four modes: **Parcel**, **2-D cloud**
 (ice / crystal habit / lightning / deep convection with regime-aware views), **Climate
-intervention**, and guided **Lecture** lessons:
+intervention**, and guided **Lecture** lessons. With the environment from *Install*
+still active:
 
-```bash
-streamlit run app/Home.py          # or `droplab-app` after pip install -e .[app]
-python scripts/warm_demo_cache.py  # optional: pre-render the one-click demos
+**Windows** (PowerShell):
+```powershell
+py -m streamlit run app\Home.py
 ```
+
+**macOS / Linux**:
+```bash
+python3 -m streamlit run app/Home.py
+```
+
+Your browser opens to the app automatically (if not, it prints a `http://localhost:8501`
+link to click). Press `Ctrl+C` in the terminal to stop it. The first cloud you run spends
+~5–10 s compiling; every run after that is fast. Port busy? add `--server.port 8600`.
+
+> After `pip install -e .` the shortcut `droplab-app` runs the same thing from any folder.
+> Optional: `python scripts/warm_demo_cache.py` pre-renders the one-click demos.
+
+<a name="run-in-a-browser-no-install"></a>
+### Run in a browser (no install)
+
+To let **anyone** use DropLab from a link — Windows, Mac, phone, no Python — deploy the
+(public) GitHub repo to a free Streamlit host:
+
+- **[Streamlit Community Cloud](https://share.streamlit.io)** → sign in with GitHub,
+  pick this repo, set the main file to `app/Home.py`, Deploy. It reads `requirements.txt`
+  automatically and gives you a public `…streamlit.app` URL.
+- **[Hugging Face Spaces](https://huggingface.co/spaces)** (Streamlit SDK) works the same way.
+
+The free tiers have ~1 GB RAM, so the **quick-look** grids run smoothly but full-resolution
+or deep-convection runs may be slow — fine for teaching and demos.
 
 **2. Notebooks** — `droplab_Part1_Foundations.ipynb` (physics, module by module),
 `droplab_Part2_Experiments.ipynb` (hands-on experiments, full predict–observe–explain),

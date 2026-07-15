@@ -4,9 +4,9 @@
 The Jupyter notebooks remain the primary interface; this is for scripted/batch runs.
 
 Usage:
-    python run_pylcm.py [config.yaml]            # single run -> time-series CSV
-    python run_pylcm.py input.yaml --ensemble 10 # N stochastic members -> envelope CSV
-    python run_pylcm.py input.yaml --out run1.csv --jobs -1
+    python run.py [config.yaml]            # single run -> time-series CSV
+    python run.py input.yaml --ensemble 10 # N stochastic members -> envelope CSV
+    python run.py input.yaml --out run1.csv --jobs -1
 
 Single run  -> multi-column CSV: time, z, T, qc, qr, Nc, Nr, Na, LWC (like the
                Fortran time_series.dat).
@@ -61,8 +61,15 @@ def build_mixing(cfg):
     p = cfg["parcel"]
     es = esatw(p["T0"])
     q0 = p["RH"] * es / (p["P0"] - p["RH"] * es) * r_a / rv
+    # ParameterizedMixing takes the ANALYTIC environment (theta_init, lapse, rh_env) —
+    # recover theta_init/lapse from the same profiles ascend_parcel uses (mirrors
+    # droplab.timestep_routine's construction; the old profile-array signature is gone).
     qv, th, z_env = create_env_profiles(p["T0"], q0, 0.0, p["P0"], "Stable")
-    return ParameterizedMixing(ent.get("lambda", 0.0), ent.get("ihmd", 0.0), qv, th, z_env)
+    theta_init = float(th[0])
+    lapse = float((th[1] - th[0]) / (z_env[1] - z_env[0]))
+    return ParameterizedMixing(ent.get("lambda", 0.0), ent.get("ihmd", 0.0),
+                               theta_init, lapse, ent.get("rh_env", 0.2),
+                               z_init=float(z_env[0]), z_top=float(z_env[-1]))
 
 
 def run_kwargs(cfg, mixing, collect, seed=0):

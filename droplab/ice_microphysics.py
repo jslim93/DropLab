@@ -7,7 +7,7 @@ driver, so the warm v1 path is bit-identical when ice is off.
 import numpy as np
 from numba import njit, prange, vectorize
 
-from droplab.parameters import rho_liq, rho_ice, rv, r_a, l_s, l_f, pi
+from droplab.parameters import rho_liq, rho_ice, rho_aero, rv, r_a, l_s, l_f, pi
 
 
 def esati(T):
@@ -96,10 +96,20 @@ def ice_fall_speed(M, A):
 
 
 @njit(parallel=True, cache=True)
-def _ice_deposition(M, A, phase, cidx, S_ice_c, G_ice_c, dt, dM_i):
+def _ice_deposition(M, A, Ns, phase, cidx, S_ice_c, G_ice_c, dt, dM_i):
     """Per-ICE-droplet depositional growth via the r^2-law against the cell's
     over-ice supersaturation. Parallel over droplets (each writes its own M[i],
-    dM_i[i] -> no race; pure function -> thread-order-independent, bit-identical)."""
+    dM_i[i] -> no race; pure function -> thread-order-independent, bit-identical).
+
+    Sublimation is FLOORED at the dry aerosol core, mirroring the liquid path
+    (radius_liquid_euler floors evaporation at r_aero): an ice particle that
+    sublimates down to its core is handed BACK to the aerosol population --
+    phase -> 0 and M = the liquid-convention dry-core mass, with the solute Ns
+    (and the caller-side inp area/charge, which ride the super-droplet) intact,
+    so it can re-deliquesce, re-activate, and re-freeze. Previously the r^2-law
+    clamped r -> 0 and the M<=0 guards everywhere made the SD a permanently
+    inert ghost, silently bleeding the CCN/INP budget in long mixed-phase runs.
+    Vapour credit dM_i = M_new - M_old, so total water stays closed."""
     for i in prange(M.shape[0]):
         if phase[i] != 1 or A[i] <= 0.0 or M[i] <= 0.0:
             dM_i[i] = 0.0
@@ -107,9 +117,19 @@ def _ice_deposition(M, A, phase, cidx, S_ice_c, G_ice_c, dt, dM_i):
         c = cidx[i]
         r = (M[i] / (A[i] * 4.0 / 3.0 * pi * rho_ice)) ** 0.33333333333
         r2 = r * r + 2.0 * G_ice_c[c] * S_ice_c[c] * dt
-        r = np.sqrt(r2) if r2 > 0.0 else 0.0
+        r_dry = (Ns[i] / (A[i] * 4.0 / 3.0 * pi * rho_aero)) ** 0.33333333333
         M_old = M[i]
-        M[i] = A[i] * 4.0 / 3.0 * pi * rho_ice * r ** 3.0
+        # Revert to aerosol ONLY when a crystal is SUBLIMATING (r2 shrinking) and its
+        # ice has fully retreated to the dry core. A freshly frozen haze particle can
+        # already sit at/below r_dry yet be GROWING (S_ice>0) -- it must be allowed to
+        # grow up as ice, not be flipped back the instant it nucleates. So gate the
+        # revert on r2 < r*r (net loss this step); growth always stays ice.
+        if r2 < r * r and r2 <= r_dry * r_dry:
+            phase[i] = 0                    # fully sublimated -> back to aerosol
+            M[i] = A[i] * 4.0 / 3.0 * pi * rho_liq * r_dry ** 3.0
+        else:
+            r = np.sqrt(r2) if r2 > 0.0 else 0.0
+            M[i] = A[i] * 4.0 / 3.0 * pi * rho_ice * r ** 3.0
         dM_i[i] = M[i] - M_old
 
 
@@ -123,15 +143,18 @@ def _scatter_dM_ice(dM_i, cidx, dM_cell):
 
 # ABIFM (water-Activity-Based Immersion Freezing Model; Knopf & Alpert 2013):
 #   log10( J_het [cm^-2 s^-1] ) = c + m * delta_aw,   delta_aw = 1 - e_si/e_sw.
-# Each entry is (c, m). Values are SOURCE-VERIFIED from the SAM6-LCM config
-# (micro_vars.f90 default + its two commented alternates). The SAM code does NOT name
-# these to a mineral, so they are kept generic; m is per unit water-activity
-# difference (dimensionless — the SAM "degC^-1" comment is a known unit-label error).
-# Add named-mineral pairs (kaolinite / illite / feldspar, Knopf & Alpert 2013) here.
+# Each entry is (c, m); m is per unit water-activity difference (dimensionless --
+# the SAM "degC^-1" comment is a known unit-label error).
+# NOTE (2026-07-05): default changed from the uncited (-4.0, 35.0) "marine" pair to
+# published natural dust (Alpert & Knopf 2016), mirroring SAM micro_vars.f90. The old
+# (-4.0, 35.0) had NO literature source (git/lit-sweep/playground all confirm it was a
+# hand-set "coarse sea salt" example); dust is near-equivalent and citable.
 ABIFM_SPECIES = {
-    "default": (-4.0, 35.0),     # SAM micro_vars.f90 default
-    "abifm_a": (-8.61, 53.32),   # SAM alternate 1 (more active)
-    "abifm_b": (-1.35, 22.62),   # SAM alternate 2
+    "default": (-1.35, 22.62),   # natural dust, Alpert & Knopf 2016 (SAM micro_vars.f90 default)
+    "dust":    (-1.35, 22.62),   # explicit alias
+    "illite":  (-8.61, 53.32),   # more active
+    "ssa":     (-3.9346, 26.6132),  # sea spray aerosol, Alpert et al. 2022
+    "marine_uncited": (-4.0, 35.0),  # former default; no published source -- do not use
 }
 
 

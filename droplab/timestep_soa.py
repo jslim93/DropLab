@@ -17,9 +17,17 @@ from droplab.condensation_fast import condense_soa
 from droplab.collision_soa import collide_soa, collide_soa_enumerate, seed_numba_rng
 
 
-def _analysis(M, A, air_mass):
+def _analysis(M, A, air_mass, rho_parcel):
     """Vectorized q/N diagnostics, matching droplab/Post_process classification
-    (liquid radius vs activation/separation thresholds)."""
+    (liquid radius vs activation/separation thresholds).
+
+    Mixing ratios (qc/qr/qa) are mass-normalized (per kg dry air, g/kg) -- that is
+    the physically correct convention (materially conserved under adiabatic
+    expansion). Number CONCENTRATIONS (NA/NC/NR, cm^-3) are a per-VOLUME quantity,
+    so they must be normalized by the parcel's actual volume V_parcel =
+    air_mass/rho_parcel, which grows as the parcel rises and rho_parcel falls --
+    NOT by the fixed dry-air mass (that silently assumes rho_air==1 kg/m^3 and
+    never dilutes with ascent)."""
     m = A > 0
     r = np.zeros_like(M)
     r[m] = (M[m] / (A[m] * 4.0 / 3.0 * pi * rho_liq)) ** (1.0 / 3.0)
@@ -29,9 +37,10 @@ def _analysis(M, A, air_mass):
     qc = np.sum(M[cloud]) / air_mass * 1e3
     qr = np.sum(M[rain]) / air_mass * 1e3
     qa = np.sum(M[aero]) / air_mass * 1e3
-    NA = np.sum(A[aero]) / air_mass / 1e6
-    NC = np.sum(A[cloud]) / air_mass / 1e6
-    NR = np.sum(A[rain]) / air_mass / 1e6
+    V_parcel = air_mass / rho_parcel               # m^3, grows as the parcel ascends
+    NA = np.sum(A[aero]) / V_parcel / 1e6
+    NC = np.sum(A[cloud]) / V_parcel / 1e6
+    NR = np.sum(A[rain]) / V_parcel / 1e6
     # number-weighted mean radius + spread of cloud+rain droplets (µm)
     big = cloud | rain
     if big.any():
@@ -43,16 +52,19 @@ def _analysis(M, A, air_mass):
     return qc, qr, qa, NA, NC, NR, rv_mean, rv_std
 
 
-def dsd_spectrum(M, A, air_mass, n_bins=60, r_min=5e-7, r_max=2e-3):
+def dsd_spectrum(M, A, air_mass, rho_parcel, n_bins=60, r_min=5e-7, r_max=2e-3):
     """Number-concentration droplet size distribution (per cm^3) over log-radius
-    bins. Pure diagnostic — no physics. Returns (bin_centers_m, number_per_bin_cm3)."""
+    bins. Pure diagnostic — no physics. Returns (bin_centers_m, number_per_bin_cm3).
+    Normalized by the parcel's actual volume (air_mass/rho_parcel), not the fixed
+    dry-air mass -- see _analysis() for why."""
     m = A > 0
     r = np.zeros_like(M)
     r[m] = (M[m] / (A[m] * 4.0 / 3.0 * pi * rho_liq)) ** (1.0 / 3.0)
     edges = np.logspace(np.log10(r_min), np.log10(r_max), n_bins + 1)
     centers = np.sqrt(edges[:-1] * edges[1:])
     num, _ = np.histogram(r[m], bins=edges, weights=A[m])
-    num = num / air_mass / 1e6
+    V_parcel = air_mass / rho_parcel
+    num = num / V_parcel / 1e6
     return centers, num
 
 
@@ -154,8 +166,8 @@ def run_soa(seed=0, n_ptcl=2000, nt=1500, dt=1.0, T0=293.2, P0=1013e2, RH=0.92,
                 keep = ~fell
                 M, A, Ns, ka, z_sd = M[keep], A[keep], Ns[keep], ka[keep], z_sd[keep]
         if (t + 1) in collect:
-            qc, qr, qa, NA, NC, NR, rv_mean, rv_std = _analysis(M, A, air_mass)
-            centers, num = dsd_spectrum(M, A, air_mass)
+            qc, qr, qa, NA, NC, NR, rv_mean, rv_std = _analysis(M, A, air_mass, rho_p)
+            centers, num = dsd_spectrum(M, A, air_mass, rho_p)
             e_s = esatw(T); e_a = q * P / (q + r_a / rv)
             out[t + 1] = dict(T=T - 273.15, T_K=T, z=z, RH=e_a / e_s, qv=q * 1e3,
                               qa=qa, qc=qc, qr=qr, NA=NA, NC=NC, NR=NR, rv=rv_mean,

@@ -14,6 +14,8 @@ _FIELDS = {
     "q_ice": dict(label="q$_{ice}$ (g/kg)", cmap="BuPu"),
     "supersat": dict(label="supersaturation", cmap="RdBu_r"),
     "qv": dict(label="q$_v$ (kg/kg)", cmap="YlGn"),
+    "theta": dict(label="θ (K)", cmap="RdYlBu_r"),
+    "T": dict(label="T (K)", cmap="RdYlBu_r"),
 }
 
 
@@ -54,7 +56,7 @@ def _draw_wind_overlay(ax, flow, frame, style="streamlines", quiver_perturb=True
 def draw_frame(ax, flow, frame, field="qc", vmax=None, r_max=50.0,
                max_dots=7000, r_show=2.0, show_aerosol=True, quiver=False,
                n_arrows=16, quiver_perturb=True, quiver_style="streamlines",
-               drop_cmap="viridis"):
+               drop_cmap="viridis", vmin=None):
     """Render one snapshot onto a (cleared) axis. Returns the scatter handle.
 
     Unactivated aerosol/haze (r <= r_show µm) is drawn as faint black dots so the
@@ -73,6 +75,11 @@ def draw_frame(ax, flow, frame, field="qc", vmax=None, r_max=50.0,
     if field == "supersat":
         lim = vmax or 0.01
         ax.pcolormesh(xe, ze, fld.T, cmap=spec["cmap"], vmin=-lim, vmax=lim,
+                      shading="flat", zorder=0)
+    elif vmin is not None:
+        # background fields with a non-zero floor (T, theta): explicit vmin/vmax
+        ax.pcolormesh(xe, ze, fld.T, cmap=spec["cmap"], vmin=vmin,
+                      vmax=(vmax if vmax is not None else fld.max()),
                       shading="flat", zorder=0)
     else:
         ax.pcolormesh(xe, ze, fld.T, cmap=spec["cmap"], vmin=0.0,

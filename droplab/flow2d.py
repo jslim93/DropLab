@@ -81,36 +81,40 @@ class Flow2D:
     def interpolate(self, x, z):
         """Bilinearly sample (u, w) at droplet positions x, z (arrays, metres).
 
-        Closed box: velocities vanish at all four walls, so coordinates are
-        clamped to the domain. Returns (u_at, w_at) arrays the same shape as x."""
-        uc, wc = self.cell_velocities()
+        Closed box: velocities vanish at all four walls. The horizontal u is sampled
+        from the cell-centered field; the VERTICAL w is sampled from its staggered
+        z-FACE field self.w (Nz+1 faces, w=0 at both lids) so the advective velocity
+        is exactly zero at the floor/ceiling — a droplet can never be pushed through
+        an impermeable wall (the correct BC; the cell-centered average is non-zero at
+        the lids and would drive droplets onto z=0). Returns (u_at, w_at)."""
+        uc, _ = self.cell_velocities()
         x = np.asarray(x, dtype=np.float64)
         z = np.asarray(z, dtype=np.float64)
 
-        # cell-center coordinates
+        # x on cell centers; z on cell centers for u, on faces for w
         xi = (x / self.dx) - 0.5            # fractional center index in x
-        zj = (z / self.dz) - 0.5            # fractional center index in z
+        zj = (z / self.dz) - 0.5            # fractional center index in z (cells)
+        zk = (z / self.dz)                  # fractional face index in z (faces at k*dz)
 
         i0 = np.floor(xi).astype(np.int64)
         j0 = np.floor(zj).astype(np.int64)
+        k0 = np.floor(zk).astype(np.int64)
         fx = xi - i0
         fz = zj - j0
+        fzk = zk - k0
 
-        # clamped at all walls (closed box)
         i0m = np.clip(i0, 0, self.Nx - 1)
         i1m = np.clip(i0 + 1, 0, self.Nx - 1)
         j0c = np.clip(j0, 0, self.Nz - 1)
         j1c = np.clip(j0 + 1, 0, self.Nz - 1)
+        k0c = np.clip(k0, 0, self.Nz)       # w-faces run 0..Nz
+        k1c = np.clip(k0 + 1, 0, self.Nz)
 
-        def _bilin(field):
-            f00 = field[i0m, j0c]
-            f10 = field[i1m, j0c]
-            f01 = field[i0m, j1c]
-            f11 = field[i1m, j1c]
-            return ((1 - fx) * (1 - fz) * f00 + fx * (1 - fz) * f10
-                    + (1 - fx) * fz * f01 + fx * fz * f11)
-
-        return _bilin(uc), _bilin(wc)
+        u_at = ((1 - fx) * (1 - fz) * uc[i0m, j0c] + fx * (1 - fz) * uc[i1m, j0c]
+                + (1 - fx) * fz * uc[i0m, j1c] + fx * fz * uc[i1m, j1c])
+        w_at = ((1 - fx) * (1 - fzk) * self.w[i0m, k0c] + fx * (1 - fzk) * self.w[i1m, k0c]
+                + (1 - fx) * fzk * self.w[i0m, k1c] + fx * fzk * self.w[i1m, k1c])
+        return u_at, w_at
 
     def psi_at(self, x, z):
         """Analytic stream function at (x, z). For a steady non-divergent flow

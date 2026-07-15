@@ -92,7 +92,7 @@ def model_init(dt_widget, nt_widget, Condensation_widget, Collision_widget, n_pa
     na_ts,nc_ts,nr_ts = np.zeros(nt+1),np.zeros(nt+1),np.zeros(nt+1)
     con_ts, act_ts, evp_ts, dea_ts = np.zeros(nt+1),np.zeros(nt+1),np.zeros(nt+1),np.zeros(nt+1)
     acc_ts, aut_ts, precip_ts = np.zeros(nt+1),np.zeros(nt+1), np.zeros(nt+1)
-    spectra_arr[0],qa_ts[0], qc_ts[0],qr_ts[0], na_ts[0], nc_ts[0], nr_ts[0], particles_array[0], rc_liq_avg_array[0], rc_liq_std_array[0], r_liq_avg_array[0], r_liq_std_array[0], particles_c_array[0] = ts_analysis(particles_list,air_mass_parcel,rm_spec, n_bins,n_particles)
+    spectra_arr[0],qa_ts[0], qc_ts[0],qr_ts[0], na_ts[0], nc_ts[0], nr_ts[0], particles_array[0], rc_liq_avg_array[0], rc_liq_std_array[0], r_liq_avg_array[0], r_liq_std_array[0], particles_c_array[0] = ts_analysis(particles_list,air_mass_parcel,rm_spec, n_bins,n_particles,rho_parcel)
     
     # Initialization of arrays for T_parcel, RH_parcel, q_parcel and z_parcel. 
     # They will later be filled with values for each time step.
@@ -181,7 +181,11 @@ def aero_init(mode_aero_init, n_ptcl, P_parcel, z_parcel,T_parcel,q_parcel, N_ae
                         particle.kappa = k_aero[idx]
                         break
                         
-            particle.A = float(round(air_mass_parcel * np.sum(N_aero) / n_ptcl))
+            # multiplicity = REAL aerosols represented: number CONCENTRATION (per m^3)
+            # times the parcel VOLUME. Using air mass here instead silently multiplies
+            # the delivered concentration by rho_air (~1.2 at the surface) — the init-
+            # side twin of the diagnostics units bug fixed in ts_analysis/_analysis.
+            particle.A = float(round(V_parcel * np.sum(N_aero) / n_ptcl))
             particle.Ns = aero_r_seed[i]**3 * 4./3. * np.pi * rho_aero * particle.A
 
             if particle.Ns > min_mass_aero:
@@ -211,7 +215,8 @@ def aero_init(mode_aero_init, n_ptcl, P_parcel, z_parcel,T_parcel,q_parcel, N_ae
         for i in range(n_ptcl):
             particle = particles(i)
             # Define the range of values to evaluate the PDF
-            particle.A = float(round(air_mass_parcel * pdf_sum[i] * dlogr * radius[i]))
+            # per-bin real count = concentration (per m^3, from the summed PDF) x V_parcel
+            particle.A = float(round(V_parcel * pdf_sum[i] * dlogr * radius[i]))
             particle.Ns = radius[i]**3 * 4./3. * np.pi * rho_aero * particle.A
             particle.kappa = 0.5
 

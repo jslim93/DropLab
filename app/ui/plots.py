@@ -107,11 +107,37 @@ def _vis_vmax(result):
     return max(0.5, float(np.percentile(fmax, 80))) if fmax else result.get("qc_max", 0.5)
 
 
-def _draw_scene(ax, flow, frame, qc_max, r_max, show_field, wind, dt, scenario):
-    if not show_field:
+def _field_array(frame, field, P_col):
+    """The 2-D background field to shade. qc/qv/theta are in the frame; T is derived
+    from theta and the level pressure P_col (T = theta*(P/p0)^kappa) -- all already
+    cached, so switching the background never re-runs the physics."""
+    if field == "T" and P_col is not None:
+        from droplab.parameters import p0, r_a, cp
+        return frame["theta"] * (np.asarray(P_col)[None, :] / p0) ** (r_a / cp)
+    return frame.get(field, frame["qc"])
+
+
+def field_range(frames, field, P_col):
+    """Run-wide (vmin, vmax) for a background field so its colour scale is stable
+    across the animation. None for qc (uses the 0-based q_c scale)."""
+    if field == "qc":
+        return None
+    vals = np.concatenate([_field_array(f, field, P_col).ravel() for f in frames])
+    return (float(np.percentile(vals, 2)), float(np.percentile(vals, 98)))
+
+
+def _draw_scene(ax, flow, frame, qc_max, r_max, show_field, wind, dt, scenario,
+                field="qc", frange=None, P_col=None):
+    if not show_field or field == "none":
         frame = dict(frame)
         frame["qc"] = frame["qc"] * 0.0
-    draw_frame(ax, flow, frame, "qc", vmax=qc_max, r_max=r_max,
+        field = "qc"
+    elif field != "qc":
+        frame = dict(frame)
+        frame[field] = _field_array(frame, field, P_col)   # inject T/theta/qv to shade
+    vmin = frange[0] if (frange is not None and field != "qc") else None
+    vmax = frange[1] if (frange is not None and field != "qc") else qc_max
+    draw_frame(ax, flow, frame, field, vmax=vmax, vmin=vmin, r_max=r_max,
                show_aerosol=(scenario != "fog"), quiver=(wind != "off"),
                quiver_style=("arrows" if wind == "arrows" else "streamlines"),
                drop_cmap="turbo")
@@ -165,17 +191,19 @@ def close(fig):
     plt.close(fig)
 
 
-def scene_image(result, show_field=True, wind="off", frame_idx=None):
+def scene_image(result, show_field=True, wind="off", frame_idx=None, field="qc"):
     """Static cloud scene — the final frame by default, or ``frame_idx`` for the
     frozen-mode scrubber. The colour scale always comes from the FULL run so the
     scene does not re-normalize while scrubbing."""
     meta = result["meta"]
     flow = flow_proxy(meta)
+    P_col = meta.get("P_col")
+    frange = field_range(result["frames"], field, P_col)
     fig, ax = plt.subplots(figsize=(9, 4.7))
     _fr = result["frames"][-1 if frame_idx is None else frame_idx]
     _draw_scene(ax, flow, _fr, _vis_vmax(result),
                 _r_max(meta["scenario"]), show_field, wind, meta["dt"],
-                meta["scenario"])
+                meta["scenario"], field=field, frange=frange, P_col=P_col)
     return _png(fig)
 
 
@@ -351,18 +379,21 @@ def twod_timeseries(result):
                                      line=dict(color=col), showlegend=multi),
                           row=r, col=c, secondary_y=bool(twin and j == 1))
     fig.update_xaxes(title_text="time (s)")
-    fig.update_layout(height=300 * rows, margin=dict(t=48), font=dict(size=20),
-                      legend=dict(orientation="h", y=1.04))
+    fig.update_layout(height=300 * rows, margin=dict(t=48, r=170), font=dict(size=20),
+                      legend=dict(orientation="v", x=1.02, xanchor="left", y=1.0,
+                                  font=dict(size=17)))
     return fig
 
 
-def scene_and_series_gif(result, show_field=True, wind="off", duration=150):
+def scene_and_series_gif(result, show_field=True, wind="off", duration=150,
+                         field="qc"):
     """Combined looping animation: the cloud scene (left) and the regime
     time-series (right) GROWING IN SYNC, frame by frame — the graphs build up at
     the same time as the cloud, on fixed axes. Memoized on the run payload so
-    repeat reruns are instant."""
+    repeat reruns are instant. `field` picks the shaded background (q_c/T/q_v);
+    it is a pure render choice — the frames are already cached, no re-run."""
     store = result.setdefault("_gifcache", {})
-    ckey = (show_field, wind)
+    ckey = (show_field, wind, field)
     if ckey in store:
         return store[ckey]
     meta = result["meta"]
@@ -371,6 +402,8 @@ def scene_and_series_gif(result, show_field=True, wind="off", duration=150):
     vmax = _vis_vmax(result)
     dt = meta["dt"]
     frames = result["frames"]
+    P_col = meta.get("P_col")
+    frange = field_range(frames, field, P_col)
     t, panels = _twod_panels(result)
     n = len(panels)
     xr = (t[0], t[-1] if t[-1] > t[0] else t[0] + 1.0)
@@ -387,30 +420,33 @@ def scene_and_series_gif(result, show_field=True, wind="off", duration=150):
                   (min(p[0] for p in per), max(p[1] for p in per)))
     imgs = []
     for k, fr in enumerate(frames):
-        fig = plt.figure(figsize=(12.2, max(4.7, 1.5 * n)))
-        gs = fig.add_gridspec(n, 2, width_ratios=[1.7, 1.0], wspace=0.32, hspace=0.8)
+        fig = plt.figure(figsize=(13.2, max(4.7, 1.5 * n)))
+        gs = fig.add_gridspec(n, 2, width_ratios=[1.7, 1.0], wspace=0.32, hspace=0.8,
+                              right=0.86)
         ax = fig.add_subplot(gs[:, 0])
         _draw_scene(ax, flow, fr, vmax, r_max, show_field, wind,
-                    dt, meta["scenario"])
+                    dt, meta["scenario"], field=field, frange=frange, P_col=P_col)
         for i, (title, traces, twin) in enumerate(panels):
             axp = fig.add_subplot(gs[i, 1])
             if twin and len(traces) == 2:
                 (n1, y1, c1), (n2, y2, c2) = traces
                 axp.plot(t[:k + 1], y1[:k + 1], color=c1, lw=1.7)
-                axp.set_ylabel(n1, color=c1, fontsize=7)
+                axp.set_ylabel(_mpl_label(n1), color=c1, fontsize=7)
                 axp.tick_params(axis="y", labelcolor=c1, labelsize=11)
                 axp.set_ylim(*yr[i][0])
                 ax2 = axp.twinx()
                 ax2.plot(t[:k + 1], y2[:k + 1], color=c2, lw=1.7)
-                ax2.set_ylabel(n2, color=c2, fontsize=7)
+                ax2.set_ylabel(_mpl_label(n2), color=c2, fontsize=7)
                 ax2.tick_params(axis="y", labelcolor=c2, labelsize=11)
                 ax2.set_ylim(*yr[i][1])
             else:
                 for name, ys, col in traces:
-                    axp.plot(t[:k + 1], ys[:k + 1], color=col, lw=1.7, label=name)
+                    axp.plot(t[:k + 1], ys[:k + 1], color=col, lw=1.7,
+                             label=_mpl_label(name))
                 axp.set_ylim(*yr[i])
                 if len(traces) > 1:
-                    axp.legend(fontsize=6, loc="upper left")
+                    axp.legend(fontsize=11, loc="center left",
+                               bbox_to_anchor=(1.02, 0.5), frameon=False)
             axp.set_xlim(*xr)
             axp.axvline(t[k], color="#AAB2C0", lw=0.7, ls=":")
             axp.set_title(_mpl_label(title), fontsize=13)
@@ -428,38 +464,53 @@ def scene_and_series_gif(result, show_field=True, wind="off", duration=150):
 
 
 def _climate_panels():
-    """The climate-intervention metrics that actually matter for MCB (NOT q_c):
-    cloud droplet number, cloud albedo, and the shortwave cloud radiative effect."""
-    return [("Cloud droplet number N<sub>d</sub>", "cm⁻³", "nc", "#2f9e44"),
-            ("Cloud albedo", "", "albedo", "#2D6BE0"),
-            ("Effective radius r<sub>eff</sub>", "µm", "reff", "#f59f00"),
-            ("Surface precip (cumulative)", "kg", "precip", "#E8743B"),
-            ("Shortwave CRE", "W/m²", "cre", "#C0504D")]
+    """Climate-intervention metrics over time, as multi-trace panels:
+    (title, [(name, ts_key, color), ...], twin). twin=True puts trace[1] on a 2nd
+    y-axis (for pairs with different units). The cloud radiative effect is shown in
+    FULL — SW (cooling, ≤0), LW (warming, ≥0), and net — so both the marine-brightening
+    (SW-dominated) and the Arctic-glaciogenic (LW-dominated) levers read directly."""
+    return [
+        ("Droplet number N<sub>d</sub> & effective radius r<sub>eff</sub>",
+         [("N<sub>d</sub> (cm⁻³)", "nc", "#2f9e44"),
+          ("r<sub>eff</sub> (µm)", "reff", "#f59f00")], True),
+        ("Cloud albedo", [("albedo", "albedo", "#2D6BE0")], False),
+        ("Cloud radiative effect (W/m²)",
+         [("SW (cooling)", "swcre", "#2D6BE0"),
+          ("LW (warming)", "lwcre", "#C0504D"),
+          ("net", "netcre", "#0c1626")], False),
+        ("Surface precip (cumulative, kg)", [("precip", "precip", "#E8743B")], False),
+    ]
 
 
 def climate_timeseries(ts, ctrl=None):
-    """Plotly of the MCB metrics over time — N_d, albedo, CRE. If ``ctrl`` (the
-    unseeded twin's series) is given it is overlaid as a DOTTED baseline so the
-    seeding effect is read directly."""
+    """Plotly of the climate metrics over time — N_d/r_eff (twin), albedo, the full
+    SW/LW/net CRE, and precip. Each panel's traces are named; if ``ctrl`` (the unseeded
+    twin's series) is given, every trace gets a DOTTED control baseline so the seeding
+    effect reads directly."""
     panels = _climate_panels()
-    fig = make_subplots(rows=len(panels), cols=1,
-                        subplot_titles=[f"{t} ({u})" if u else t
-                                        for t, u, _k, _c in panels])
-    for i, (_title, _unit, k, col) in enumerate(panels):
-        fig.add_trace(go.Scatter(x=ts["t"], y=ts[k], mode="lines",
-                                 name="seeded" if ctrl else None,
-                                 line=dict(color=col, width=2.4),
-                                 showlegend=bool(ctrl) and i == 0), row=i + 1, col=1)
-        if ctrl is not None:
-            fig.add_trace(go.Scatter(x=ctrl["t"], y=ctrl[k], mode="lines",
-                                     name="control (unseeded)",
-                                     line=dict(color=col, width=1.8, dash="dot"),
-                                     showlegend=i == 0), row=i + 1, col=1)
+    specs = [[{"secondary_y": bool(twin)}] for _t, _tr, twin in panels]
+    fig = make_subplots(rows=len(panels), cols=1, specs=specs,
+                        subplot_titles=[p[0] for p in panels])
+    for i, (_title, traces, twin) in enumerate(panels):
+        multi = len(traces) > 1
+        for j, (name, k, col) in enumerate(traces):
+            sec = bool(twin and j == 1)
+            fig.add_trace(go.Scatter(x=ts["t"], y=ts[k], mode="lines", name=name,
+                                     line=dict(color=col, width=2.4),
+                                     showlegend=multi and i in (0, 2)),
+                          row=i + 1, col=1, secondary_y=sec)
+            if ctrl is not None:
+                fig.add_trace(go.Scatter(x=ctrl["t"], y=ctrl[k], mode="lines",
+                                         name=name + " (control)",
+                                         line=dict(color=col, width=1.6, dash="dot"),
+                                         showlegend=False),
+                              row=i + 1, col=1, secondary_y=sec)
     fig.update_xaxes(title_text="time (s)")
-    fig.update_layout(height=250 * len(panels), margin=dict(t=48),
+    fig.update_layout(height=250 * len(panels), margin=dict(t=48, r=170),
                       font=dict(size=20),
-                      legend=dict(orientation="h", y=1.05, font=dict(size=18)))
-    fig.update_annotations(font_size=20)
+                      legend=dict(orientation="v", x=1.02, xanchor="left", y=1.0,
+                                  font=dict(size=17)))
+    fig.update_annotations(font_size=18)
     return fig
 
 
@@ -470,13 +521,15 @@ def _draw_climate_scene(ax, flow, frame, vmax, seed_on):
         draw_frame(ax, flow, frame, "qc", vmax=vmax, r_max=60.0)
 
 
-def climate_scene_series_gif(result, ctrl_ts=None, duration=160):
-    """Combined looping animation for the climate deck: the stratocumulus scene
+def climate_scene_series_gif(result, ctrl_ts=None, ctrl_result=None, duration=160):
+    """Combined looping animation for the climate deck: the stratocumulus scene(s)
     (left) and the MCB metrics N_d / albedo / CRE (right) growing IN SYNC. If
-    ``ctrl_ts`` is given, the unseeded twin is drawn as a dotted baseline so the
-    seeding effect builds up visibly. Memoized on the run payload."""
+    ``ctrl_ts`` is given, the unseeded twin is drawn as a dotted baseline on the
+    graphs; if ``ctrl_result`` (the twin's full run) is also given, its SCENE is
+    drawn side by side with the seeded one so the intervention contrast is visible
+    directly — both runs are already cached, so this adds no computation. Memoized."""
     store = result.setdefault("_gifcache", {})
-    ck = ("synced", ctrl_ts is not None)
+    ck = ("synced", ctrl_ts is not None, ctrl_result is not None)
     if ck in store:
         return store[ck]
     meta = result["meta"]
@@ -485,39 +538,85 @@ def climate_scene_series_gif(result, ctrl_ts=None, duration=160):
     ts = result["ts"]
     seed_on = meta.get("seed_on", False)
     panels = _climate_panels()
-    vmax = max(0.3, float(np.percentile([f["qc"].max() for f in frames], 90)))
+    cframes = ctrl_result["frames"] if ctrl_result is not None else None
+    dual = cframes is not None
+    # shared colour scale across both decks so brightness differences are honest
+    _qcs = [f["qc"].max() for f in frames] + ([f["qc"].max() for f in cframes] if dual else [])
+    vmax = max(0.3, float(np.percentile(_qcs, 90)))
     t = ts["t"]
     xr = (t[0], t[-1] if t[-1] > t[0] else t[0] + 1.0)
-    yr = []
-    for _ti, _u, k, _c in panels:
-        vals = list(ts[k]) + (list(ctrl_ts[k]) if ctrl_ts else [])
+    def _range(keys):
+        vals = []
+        for k in keys:
+            vals += list(ts[k]) + (list(ctrl_ts[k]) if ctrl_ts else [])
         lo, hi = (min(vals), max(vals)) if vals else (0.0, 1.0)
         if hi <= lo:
             hi = lo + 1.0
         pad = 0.08 * (hi - lo)
-        yr.append((lo - pad, hi + pad))
+        return (lo - pad, hi + pad)
+
+    yr = []                                   # per panel: (lo,hi) or [main, twin]
+    for _ti, traces, twin in panels:
+        if twin and len(traces) == 2:
+            yr.append([_range([traces[0][1]]), _range([traces[1][1]])])
+        else:
+            yr.append(_range([tr[1] for tr in traces]))
     n = len(panels)
     imgs = []
-    for kk, fr in enumerate(frames):
-        fig = plt.figure(figsize=(13.5, max(5.4, 1.95 * n)))
-        gs = fig.add_gridspec(n, 2, width_ratios=[1.7, 1.0], wspace=0.32, hspace=0.7)
+    nfr = min(len(frames), len(cframes)) if dual else len(frames)
+    for kk in range(nfr):
+        fr = frames[kk]
+        # layout: [seeded scene | control scene | metrics] when dual, else [scene | metrics]
+        if dual:
+            fig = plt.figure(figsize=(17.6, max(5.4, 1.95 * n)))
+            gs = fig.add_gridspec(n, 3, width_ratios=[1.3, 1.3, 1.0],
+                                  wspace=0.28, hspace=0.7, right=0.87)
+            axc = fig.add_subplot(gs[:, 1])
+            _draw_climate_scene(axc, flow, cframes[kk], vmax, seed_on=False)
+            axc.set_title("control (unseeded)", fontsize=12)
+            col_metrics = 2
+        else:
+            fig = plt.figure(figsize=(14.4, max(5.4, 1.95 * n)))
+            gs = fig.add_gridspec(n, 2, width_ratios=[1.7, 1.0], wspace=0.32,
+                                  hspace=0.7, right=0.87)
+            col_metrics = 1
         ax = fig.add_subplot(gs[:, 0])
         _draw_climate_scene(ax, flow, fr, vmax, seed_on)
-        ax.set_title(f"t = {t[kk] / 60.0:.1f} min", fontsize=12)
-        for i, (title, unit, k, col) in enumerate(panels):
-            axp = fig.add_subplot(gs[i, 1])
-            axp.plot(t[:kk + 1], ts[k][:kk + 1], color=col, lw=1.8,
-                     label="seeded" if ctrl_ts else None)
-            if ctrl_ts is not None:
-                axp.plot(ctrl_ts["t"][:kk + 1], ctrl_ts[k][:kk + 1], color=col,
-                         lw=1.5, ls=":", label="control")
+        ax.set_title(("seeded   " if dual else "") + f"t = {t[kk] / 60.0:.1f} min",
+                     fontsize=12)
+        for i, (title, traces, twin) in enumerate(panels):
+            axp = fig.add_subplot(gs[i, col_metrics])
+            if twin and len(traces) == 2:
+                (n1, k1, c1), (n2, k2, c2) = traces
+                axp.plot(t[:kk + 1], ts[k1][:kk + 1], color=c1, lw=1.7)
+                axp.set_ylabel(_mpl_label(n1), color=c1, fontsize=7)
+                axp.tick_params(axis="y", labelcolor=c1, labelsize=10)
+                axp.set_ylim(*yr[i][0])
+                ax2 = axp.twinx()
+                ax2.plot(t[:kk + 1], ts[k2][:kk + 1], color=c2, lw=1.7)
+                ax2.set_ylabel(_mpl_label(n2), color=c2, fontsize=7)
+                ax2.tick_params(axis="y", labelcolor=c2, labelsize=10)
+                ax2.set_ylim(*yr[i][1])
+                if ctrl_ts is not None:
+                    axp.plot(ctrl_ts["t"][:kk + 1], ctrl_ts[k1][:kk + 1], color=c1,
+                             lw=1.3, ls=":")
+                    ax2.plot(ctrl_ts["t"][:kk + 1], ctrl_ts[k2][:kk + 1], color=c2,
+                             lw=1.3, ls=":")
+            else:
+                for name, k, col in traces:
+                    axp.plot(t[:kk + 1], ts[k][:kk + 1], color=col, lw=1.7, label=name)
+                    if ctrl_ts is not None:
+                        axp.plot(ctrl_ts["t"][:kk + 1], ctrl_ts[k][:kk + 1], color=col,
+                                 lw=1.3, ls=":")
+                axp.set_ylim(*yr[i])
+                if len(traces) > 1:
+                    axp.axhline(0.0, color="#AAB2C0", lw=0.6)
+                    axp.legend(fontsize=11, loc="center left",
+                               bbox_to_anchor=(1.02, 0.5), frameon=False)
             axp.set_xlim(*xr)
-            axp.set_ylim(*yr[i])
             axp.axvline(t[kk], color="#AAB2C0", lw=0.7, ls=":")
-            axp.set_title(_mpl_label(f"{title} ({unit})" if unit else title), fontsize=13)
-            axp.tick_params(labelsize=11)
-            if ctrl_ts is not None and i == 0:
-                axp.legend(fontsize=6, loc="upper left")
+            axp.set_title(_mpl_label(title), fontsize=12)
+            axp.tick_params(axis="x", labelsize=10)
         buf = io.BytesIO()
         fig.savefig(buf, format="png", dpi=100)
         plt.close(fig)

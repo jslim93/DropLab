@@ -19,7 +19,7 @@ cloud drops, not haze) contribute to the optics.
 """
 import numpy as np
 
-from droplab.parameters import rho_liq, pi
+from droplab.parameters import rho_liq, rho_ice, pi
 
 
 def column_optics(M, A, x, z, flow, depth=1.0, g_asym=0.85, r_min_um=1.0):
@@ -68,6 +68,20 @@ def optics_from_frame(frame, flow, depth=1.0, **kw):
     A = frame["A"]
     M = A * 4.0 / 3.0 * pi * rho_liq * r ** 3
     return column_optics(M, A, frame["x"], frame["z"], flow, depth, **kw)
+
+
+def cre_from_frame(frame, flow, T_col, depth=1.0, mu0=0.5, **kw):
+    """Per-frame SW / LW / net cloud radiative effect [W m^-2] from a captured
+    animation frame (radius + multiplicity + phase), reconstructing per-phase mass so
+    the liquid- and ice-water paths feed the long-wave emissivity correctly. Returns
+    the cloud_radiative_effect() dict (…_mean scalars for the time series)."""
+    r = frame["r_um"] * 1e-6
+    A = frame["A"]
+    phase = frame.get("phase")
+    rho = np.where(phase == 1, rho_ice, rho_liq) if phase is not None else rho_liq
+    M = A * 4.0 / 3.0 * pi * rho * r ** 3
+    return cloud_radiative_effect(M, A, frame["x"], frame["z"], flow, T_col,
+                                  phase=phase, depth=depth, mu0=mu0, **kw)
 
 
 def toa_forcing(d_albedo, S0=1361.0, T_atm=0.75):

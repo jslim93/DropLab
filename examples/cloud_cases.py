@@ -21,7 +21,7 @@ from droplab.flow2d_dynamic import run_flow2d_dynamic
 from droplab.flow2d_viz import draw_frame
 from droplab.soundings import (BOMEX, CONGESTUS, DYCOMS, RICO, FOG, ISDAC, MOSAIC, CIRRUS, DEEP_COLD,
                              DEEP_CAPE, CUMULONIMBUS, BOMEX_FORCING, RICO_FORCING,
-                             DYCOMS_RADIATION, DEEP_CONVECTION_FORCING)
+                             DYCOMS_RADIATION, DYCOMS_FORCING, DEEP_CONVECTION_FORCING)
 
 _COMMON = dict(pert_amp=0.1, collect_every=400, seed=3)
 
@@ -33,9 +33,15 @@ CASES = {
                       sounding=CONGESTUS, forcing=BOMEX_FORCING, N_modes=(200.,), nu=16,
                       nu_scalar=1.5, collisions=True, switch_TICE=True, eps=0.01,
                       sediment=True, **_COMMON),
+    # nu_scalar 0.2 (not the 1.5 the convective cases use): the deck lives or dies by
+    # the SHARP 40-m inversion, and explicit scalar diffusion at 1.5 m^2/s erodes it at
+    # ~8x the real entrainment rate -- the BL then dries out and the deck starves by
+    # ~45-60 min. DYCOMS_FORCING (subcloud-distributed LHF/SHF + subsidence; see
+    # droplab.soundings for why NOT bottom-cell fluxes) balances the budget so the deck
+    # persists >= 2 h on the 2-D, quick and Climate grids (validated 2026-07-14).
     "dycoms": dict(nt=1500, dt=1.0, Nx=96, Nz=48, X=4800, Z=1200, n_super=60000,
-                   sounding=DYCOMS, rad_cool=DYCOMS_RADIATION, periodic_x=True,
-                   N_modes=(250.,), nu=6, nu_scalar=1.5, collisions=True,
+                   sounding=DYCOMS, rad_cool=DYCOMS_RADIATION, forcing=DYCOMS_FORCING,
+                   periodic_x=True, N_modes=(250.,), nu=6, nu_scalar=0.2, collisions=True,
                    switch_TICE=True, eps=0.01, sediment=True, **_COMMON),
     "rico": dict(nt=1200, dt=1.5, Nx=96, Nz=72, X=4800, Z=4000, n_super=60000,
                  sounding=RICO, forcing=RICO_FORCING, N_modes=(70.,), nu=12,
@@ -55,18 +61,27 @@ CASES = {
                   N_modes=(200.,), nu=16, nu_scalar=1.5, collisions=False, sediment=True,
                   b_max=0.18, omega_max=0.05, **_COMMON),
     # Real MOSAiC 2019-11-01 Arctic PERSISTENT mixed-phase deck (polar-night cold,
-    # ~-18 C surface / ~-24 C cloud top). ABIFM (Knopf & Alpert 2013) on a base INP
-    # population at a REALISTIC Arctic loading (inp_n_cm3=0.2 ~ 200/L) — the cold makes
-    # freezing efficient, so only a FEW INP-bearing drops freeze, the liquid deck
-    # persists (the real persistent-mixed-phase paradox), and the scarce ice crystals
-    # grow large by WBF and snow out. Lower inp_n_cm3 -> even more persistent / fewer
-    # crystals; higher -> faster glaciation. Deep domain to hold the ~1650 m BL.
+    # ~-18 C surface / ~-24 C cloud top). ABIFM (Knopf & Alpert 2013) immersion freezing.
+    # INP parameters are the SAM6-LCM MOSAIC/prm values verbatim: n_ice=1/L
+    # (inp_n_cm3=0.001), rm_ice=0.37 um geometric-mean INP RADIUS, sigma_ice=2.55, and
+    # frac_ice=0.5 (LES-style: INP spread over half the super-droplets at low weight,
+    # inp_frac). ABIFM (c,m)=(-1.35, 22.62) natural dust, also from that prm.
+    #
+    # The small, broadly-distributed INP is what makes the deck PERSIST: freezing area
+    # ~ r^2, so at rm=0.37 um only the large tail of the lognormal freezes, and slowly
+    # (t_half ~ hours, not the ~2 min a 4 um core gives). The reservoir barely depletes
+    # (~85% of INP still present after 3 h), so ice sustains at a low quasi-steady IWP
+    # (~3-5 g/kg, verified to 6 h) while the liquid deck persists -- the real persistent
+    # mixed-phase regime, with NO INP replenishment needed. A too-large INP core froze
+    # everything in minutes (a burst that snowed out and killed the ice); a too-high
+    # concentration (>=100/L, finely sampled) glaciates the whole deck. Deep domain holds
+    # the ~1650 m BL.
     "arctic": dict(nt=1500, dt=1.0, Nx=96, Nz=64, X=4800, Z=2600, n_super=60000,
                    sounding=MOSAIC, rad_cool=DYCOMS_RADIATION, periodic_x=True,
                    N_modes=(60.,), nu=6, nu_scalar=1.0, collisions=True,
                    switch_TICE=True, eps=0.01, sediment=True, ice=True,
-                   freezing_mode="abifm", inp_n_cm3=0.2, inp_r_um=4.0,
-                   inp_sigma=1.5, inp_species="default", **_COMMON),
+                   freezing_mode="abifm", inp_n_cm3=0.001, inp_r_um=0.37,
+                   inp_sigma=2.55, inp_species="default", inp_frac=0.5, **_COMMON),
     # Idealized CIRRUS: the domain IS the upper-tropospheric layer (P0=250 hPa, ~10 km),
     # no surface boundary layer. An ice-supersaturated cold layer (T~228 K, below the
     # homogeneous-freezing threshold) glaciates by HOMOGENEOUS freezing with NO ice nuclei

@@ -173,21 +173,31 @@ def test_warm_run_ice_keys_absent_and_golden_safe():
 
 
 def test_glaciation_box_conserves_water_and_glaciates():
-    """Supercooled box: ice nucleates and grows by deposition while liquid
-    evaporates (WBF). Total water conserved; ice grows, liquid shrinks."""
-    out = run_flow2d_dynamic(nt=300, dt=1.0, Nx=8, Nz=8, T0=248.0, RH0=0.999,
-                             n_super=4000, collisions=False, ice=True,
-                             freezing_mode="bigg",
-                             sediment=False, nu_scalar=0.0, collect_every=30,
-                             a_bigg=0.66, B_bigg=1.0e6)
+    """Supercooled deck with ice co-located with liquid: the ice grows by deposition
+    (WBF) at the liquid's expense. Total water conserved; ice grows, liquid shrinks.
+
+    Ice is INJECTED into the liquid cloud (rather than relying on spontaneous Bigg
+    freezing) so the crystals sit in the ice-supersaturated, liquid-buffered air where
+    WBF genuinely proceeds. The earlier Bigg-only box "glaciated" only through the
+    sublimated-ice-as-M=0-ghost artifact (dynamics swept the frozen drops into dry,
+    ice-SUBsaturated pockets, where correct physics now reverts them to aerosol); it
+    was validating that artifact, not WBF. This co-located box tests the real thing."""
+    base = dict(nt=200, dt=1.0, Nx=16, Nz=16, T0=250.0, RH0=0.999, n_super=4000,
+                collisions=False, ice=True, freezing_mode="bigg", B_bigg=1.0,
+                sediment=False, nu_scalar=0.0, collect_every=20)
+    inp_spec = dict(t_inject=20.0, x_frac=(0.3, 0.7), z_lo=50.0, z_hi=400.0,
+                    N_cm3=0.05, r_um=0.5, r_wet_um=3.0, kappa=0.0, n_super=400,
+                    phase="ice")
+    out = run_flow2d_dynamic(seeding=inp_spec, **base)
     fr = out["frames"]
     def total_water(f):
         # qv is kg/kg; q_liquid/q_ice frames are reported in g/kg -> back to kg/kg
         return float(f["qv"].sum() + (f["q_liquid"].sum() + f["q_ice"].sum()) / 1e3)
     tw0, tw1 = total_water(fr[0]), total_water(fr[-1])
     assert tw1 == pytest.approx(tw0, rel=2e-3)              # water conserved
-    assert fr[-1]["q_ice"].sum() > fr[0]["q_ice"].sum()     # ice grew
-    assert fr[-1]["q_liquid"].sum() < fr[0]["q_liquid"].sum()  # liquid fell (Bergeron)
+    # compare the frame just AFTER injection (fr[1], step 20) with the end
+    assert fr[-1]["q_ice"].sum() > fr[1]["q_ice"].sum()        # ice grew by WBF
+    assert fr[-1]["q_liquid"].sum() < fr[1]["q_liquid"].sum()  # liquid fell (Bergeron)
 
 
 def test_inp_seeding_injects_ice_and_glaciates():
@@ -226,13 +236,13 @@ def test_abifm_prob_zero_without_inp():
     from droplab.condensation import esatw
     from droplab.ice_microphysics import esati
     T = 263.15
-    assert abifm_prob(0.0, esatw(T), esati(T), 1.0, -4.0, 35.0) == 0.0
+    assert abifm_prob(0.0, esatw(T), esati(T), 1.0, -1.35, 22.62) == 0.0
 
 
 def test_abifm_prob_increases_with_inp_area_and_cold():
     from droplab.ice_microphysics import abifm_prob, esati
     from droplab.condensation import esatw
-    c, m = -4.0, 35.0
+    c, m = -1.35, 22.62
     # bigger immersed INP area -> higher freezing probability
     Tw = 263.15
     p_small = abifm_prob(1e-12, esatw(Tw), esati(Tw), 1.0, c, m)
@@ -247,8 +257,8 @@ def test_abifm_prob_increases_with_inp_area_and_cold():
 
 def test_abifm_species_table_has_verified_pairs():
     from droplab.ice_microphysics import ABIFM_SPECIES
-    assert ABIFM_SPECIES["default"] == (-4.0, 35.0)
-    assert "abifm_a" in ABIFM_SPECIES and "abifm_b" in ABIFM_SPECIES
+    assert ABIFM_SPECIES["default"] == (-1.35, 22.62)  # natural dust (Alpert & Knopf 2016)
+    assert "dust" in ABIFM_SPECIES and "illite" in ABIFM_SPECIES
 
 
 def test_inp_population_present_at_start():

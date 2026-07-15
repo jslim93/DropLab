@@ -77,12 +77,46 @@ def _ice_fallspeed(D):
 
 
 # --------------------------------------------------------------------------------------
-# charging law (Saunders single reversal temperature)
+# charging law: Saunders & Peck (1998) critical rime-accretion-rate (RAR) curve
 # --------------------------------------------------------------------------------------
-def graupel_charge_sign(T, q_rev_T):
-    """Sign of the charge the GRAUPEL (heavy, riming) ice acquires at temperature T.
-    Below the reversal temperature graupel charges negative; above it, positive
-    (Saunders). The lighter rebounding crystals take the opposite sign."""
+# Table 1 of Saunders & Peck (1998), J. Geophys. Res. 103(D12), 13949-13956: a 6th-order
+# polynomial fit (in cloud temperature T, degC) to their Figure 6 -- the laboratory-measured
+# boundary in (RAR, T) space between positive and negative graupel charging. RAR = EW*V
+# [g m^-2 s^-1] is the rime accretion rate (EW = effective liquid water content swept by the
+# graupel [g m^-3], V = graupel/crystal relative fall speed [m/s]); RAR at/above the curve ->
+# graupel charges POSITIVE, below it -> NEGATIVE (p. 13955: "graupel to charge negatively at
+# temperatures as high as -2.3 degC at values of RAR below around 1 g m^-2 s^-1; at higher
+# values of RAR the rimer charges positively"). Coefficients transcribed directly from Table 1.
+_RAR_CRIT_COEFFS = (1.0, 7.9262e-2, 4.4847e-2, 7.4754e-3, 5.4686e-4, 1.6737e-5, 1.7613e-7)
+_RAR_CRIT_T_LO, _RAR_CRIT_T_HI = -36.2, -2.3   # degC, the experimental range (Saunders & Peck 1998)
+
+
+def critical_rar(T_celsius):
+    """Critical rime accretion rate [g m^-2 s^-1] for graupel charge-sign reversal at
+    cloud temperature T_celsius (degC): Saunders & Peck (1998) Table 1 polynomial fit to
+    their Figure 6. Valid only for -36.2 <= T <= -2.3 degC (the paper: "this equation is
+    valid only in the temperature range investigated") -- T is clamped to that range
+    before evaluation, and the result is floored at 0 (RAR cannot be negative; the raw
+    6th-order fit dips slightly negative right at the cold edge of the fitted range)."""
+    Tc = np.clip(T_celsius, _RAR_CRIT_T_LO, _RAR_CRIT_T_HI)
+    rar = sum(c * Tc ** k for k, c in enumerate(_RAR_CRIT_COEFFS))
+    return np.maximum(rar, 0.0)
+
+
+def graupel_charge_sign(T, q_rev_T, RAR=None):
+    """Sign of the charge the GRAUPEL (heavy, riming) ice acquires. The lighter
+    rebounding crystals take the opposite sign.
+
+    When `RAR` [g m^-2 s^-1] (rime accretion rate = EW*V) is given, uses the literature
+    Saunders & Peck (1998) critical-RAR(T) curve (see critical_rar()): RAR at/above the
+    curve -> positive, below it -> negative. This is the real (RAR, T)-dependent boundary,
+    not a single reversal temperature.
+
+    Falls back to a single fixed reversal temperature q_rev_T (below it negative, above
+    it positive) when RAR is None -- e.g. no local effective-liquid-water estimate is
+    available at the call site. This fallback is the older, coarser convention."""
+    if RAR is not None:
+        return 1.0 if RAR >= critical_rar(T - 273.15) else -1.0
     return -1.0 if T < q_rev_T else 1.0
 
 
@@ -91,7 +125,8 @@ def graupel_charge_sign(T, q_rev_T):
 # --------------------------------------------------------------------------------------
 def deposit_charge(charge, M, A, phase, cidx, Nc, T_flat, qsc_flat,
                    q_sc_min, q_rev_T, dt, V_cell, Nx, Nz, dz, charge_eff=EPS_SEP,
-                   sweep_depth=300.0, T_lo=243.15, T_hi=271.15):
+                   sweep_depth=300.0, T_lo=243.15, T_hi=271.15, hab=None,
+                   rho_air_flat=None):
     """Separate charge by NON-INDUCTIVE graupel-crystal collisions, SWEEP-based.
 
     Real non-inductive charging is a sweep-out: graupel falls THROUGH a population of ice
@@ -117,13 +152,32 @@ def deposit_charge(charge, M, A, phase, cidx, Nc, T_flat, qsc_flat,
     horizontally (by shear) are NOT swept, so shear-separated regions correctly do not charge.
 
     Magnitude physically anchored (collision rate x lab per-collision charge DQ_NI~5 fC).
-    Kept simplifications (labelled): single ice category sized into graupel/crystal, single
-    reversal temperature, representative kernel. Mutates `charge` in place."""
+    Kept simplifications (labelled): single ice category sized into graupel/crystal,
+    representative kernel. Mutates `charge` in place.
+
+    `rho_air_flat`, when given (Nc,), lets the charge-SIGN law use the real Saunders &
+    Peck (1998) critical-rime-accretion-rate curve (see graupel_charge_sign()) instead of
+    a single fixed reversal temperature: the representative supercooled liquid water
+    content EW [g/m^3] = qsc * rho_air is combined with the already-computed graupel/
+    crystal relative fall speed into RAR = EW*V. Falls back to the single-q_rev_T rule
+    when rho_air_flat is None (no local air-density estimate at the call site).
+
+    `hab`, when given (habit=True runs), is the (N,3)=[a_axis,c_axis,rho_app] shape state
+    from droplab.ice_habit: rho_app is the particle's ACTUAL apparent density, which
+    riming/deposition growth can push well away from bulk solid ice (rho_ice) -- fluffy,
+    low-density crystals/aggregates are geometrically LARGER than a fixed-rho_ice sphere of
+    the same mass would suggest, so using rho_ice for ALL ice mis-sizes the graupel/crystal
+    split. Falls back to rho_ice for any particle with no shape yet (hab[:,2]<=0) or when
+    hab is None (habit=False, or the pre-habit call sites)."""
     is_ice = (phase == 1) & (A > 0) & (M > 0)
     if not is_ice.any():
         return charge
+    rho_class = np.full_like(M, rho_ice)
+    if hab is not None:
+        has_shape = is_ice & (hab[:, 2] > 0.0)
+        rho_class[has_shape] = hab[has_shape, 2]
     r = np.zeros_like(M)
-    r[is_ice] = (M[is_ice] / (A[is_ice] * (4.0 / 3.0) * pi * rho_ice)) ** (1.0 / 3.0)
+    r[is_ice] = (M[is_ice] / (A[is_ice] * (4.0 / 3.0) * pi * rho_class[is_ice])) ** (1.0 / 3.0)
     is_g = is_ice & (2.0 * r > D_GRAUPEL)
     is_c = is_ice & (2.0 * r <= D_GRAUPEL) & (r > 0.0)
     if not is_g.any() or not is_c.any():
@@ -139,10 +193,16 @@ def deposit_charge(charge, M, A, phase, cidx, Nc, T_flat, qsc_flat,
         return charge
     # representative collection kernel from domain-mean graupel/crystal sizes
     rg = float(np.average(r[is_g], weights=A[is_g])); rc = float(np.average(r[is_c], weights=A[is_c]))
-    K = pi * (rg + rc) ** 2 * abs(_ice_fallspeed(2.0 * rg) - _ice_fallspeed(2.0 * rc)) * E_COLL_GC
+    v_rel = abs(_ice_fallspeed(2.0 * rg) - _ice_fallspeed(2.0 * rc))   # graupel/crystal relative speed
+    K = pi * (rg + rc) ** 2 * v_rel * E_COLL_GC
     coef = DQ_NI * charge_eff * dt * K
-    s = graupel_charge_sign(float(np.average(T_flat[active], weights=(ng + nc)[active] + 1e-30)),
-                            q_rev_T)
+    w_active = (ng + nc)[active] + 1e-30
+    T_rep = float(np.average(T_flat[active], weights=w_active))
+    RAR = None
+    if rho_air_flat is not None:
+        EW = float(np.average(qsc_flat[active] * rho_air_flat[active], weights=w_active)) * 1e3
+        RAR = EW * v_rel                                # g m^-2 s^-1 (Saunders & Peck 1998)
+    s = graupel_charge_sign(T_rep, q_rev_T, RAR=RAR)
     g_act = np.flatnonzero(is_g & active[cidx])        # graupel in the charging zone
     c_all = np.flatnonzero(is_c)
     if g_act.size == 0:

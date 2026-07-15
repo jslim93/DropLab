@@ -315,12 +315,13 @@ def render_twod():
     # pick it up via session_state.
     demo = st.session_state.pop("pending_demo", None)
     if demo and demo.get("scenario"):
-        st.session_state["twod_scenario"] = demo["scenario"]
+        sc = demo["scenario"]
+        st.session_state["twod_scenario"] = sc
         t = demo["toggles"]
-        st.session_state["twod_ice"] = t.get("ice", False)
-        st.session_state["twod_habit"] = t.get("habit", False)
-        st.session_state["twod_elec"] = t.get("electrification", False)
-        st.session_state["twod_coll"] = t.get("collisions", True)
+        # widget keys are scenario-scoped (controls.py: f"twod_{scenario}_ice" etc.);
+        # habit/electrification have no widgets — the UI derives them from ice.
+        st.session_state[f"twod_{sc}_ice"] = t.get("ice", False)
+        st.session_state[f"twod_{sc}_coll"] = t.get("collisions", True)
         st.session_state["twod_autorun"] = True
 
     theme.header("02 · Showcase", "2-D cloud",
@@ -403,7 +404,16 @@ def render_twod():
                               help="quick: a coarse grid for a fast first click. "
                                    "full: the validated CASES grid (slow). Run "
                                    "length is set above, independently.")
-        show_field = st.checkbox("Show q_c field tiles", True)
+        # background field shaded behind the droplets — a pure RENDER choice (the
+        # fields are already in the cached frames, so switching never re-runs).
+        _bg = st.radio("Background field", ["q_c", "T", "q_v", "none"],
+                       horizontal=True, key="twod_bg",
+                       help="What to shade behind the droplets. T and q_v come from "
+                            "the same cached run as q_c — no recompute. 'none' = "
+                            "particles only.")
+        _BG = {"q_c": "qc", "T": "T", "q_v": "qv", "none": "none"}
+        bg_field = _BG[_bg]
+        show_field = bg_field != "none"
         wind = st.radio("Wind overlay", ["off", "streamlines", "arrows"],
                         horizontal=True)
         run = st.button("▶ Run cloud", type="primary", use_container_width=True)
@@ -479,10 +489,10 @@ def render_twod():
                  "aerosols.")
         return
 
-    _render_twod_result(result, show_field, wind)
+    _render_twod_result(result, show_field, wind, bg_field)
 
 
-def _render_twod_result(result, show_field, wind):
+def _render_twod_result(result, show_field, wind, bg_field="qc"):
     met = result["metrics"]
     cols = st.columns(5)
     cols[0].metric("Peak cloud water", f"{result['qc_max']:.2f} g/kg",
@@ -516,10 +526,11 @@ def _render_twod_result(result, show_field, wind):
                                              "off to freeze: final scene + full "
                                              "interactive graphs.")
                 if animate:
-                    st.image(plots.scene_and_series_gif(result, show_field, wind),
-                             use_container_width=True,
-                             caption="Cloud scene + key variables building together, "
-                                     "in sync (loops from frame 0).")
+                    theme.animated_gif(
+                        plots.scene_and_series_gif(result, show_field, wind,
+                                                   field=bg_field),
+                        caption="Cloud scene + key variables building together, "
+                                "in sync (loops from frame 0).")
                 else:
                     # frozen mode = a frame SCRUBBER: step through the run by hand
                     frames = result["frames"]
@@ -530,7 +541,7 @@ def _render_twod_result(result, show_field, wind):
                                   help="Drag to move through the run frame by frame.")
                     t_k = frames[k]["step"] * dt_m
                     st.image(plots.scene_image(result, show_field, wind,
-                                               frame_idx=k),
+                                               frame_idx=k, field=bg_field),
                              use_container_width=True,
                              caption=f"Frame {k + 1}/{n_fr} — t = {t_k / 60:.1f} min.")
                     st.markdown("**Key variables over time**")
@@ -600,10 +611,13 @@ def render_climate():
                                            "develop — not end right after injection.")
         nt = presets.CLIMATE_RUN_STEPS[run_choice]
         run_min = nt / 60.0   # dt = 1 s in the climate deck
+        # key includes the run length: a stored value above the new max raises
+        # StreamlitValueAboveMaxError when the user shortens the run (the 2-D page's
+        # inject slider already keys by run_min for exactly this reason).
         inject_min = st.slider("Inject at (simulated min)", 0.0, round(run_min, 1),
                                0.0,
                                step=max(0.5, round(run_min / 40, 1)),
-                               disabled=not seed_on, key="clim_inject",
+                               disabled=not seed_on, key=f"clim_inject_{run_min:g}",
                                help="When the seeding fires — early, so the effect "
                                     "has time to develop before the run ends.")
         compare = st.checkbox("Compare to an unseeded twin (control)",
@@ -631,40 +645,48 @@ def render_climate():
     (background_N, ihmd, seed_on, seed_kind, seed_N, seed_r,
      inject_min, nt, Nx, Nz, n_super, _dt_c, background) = clim_args
 
-    # SEEDED deck first, streaming live, so the user sees frames immediately;
-    # the quiet control twin runs afterwards (its baseline is only needed by the
-    # comparison overlays, which all render later anyway).
-    if cache.climate_is_cached(*clim_args):
-        out = cache.run_climate(*clim_args)          # already computed → instant
-    else:
-        st.caption("Simulating the deck live — frames appear as computed, then it "
-                   "is cached and loops.")
-        live = st.empty()
-        bar = st.progress(0.0, text="starting…")
-        _draw_fails = [0]
+    # Both decks stream LIVE, side by side, as they compute (sequentially): the
+    # seeded deck first, then the unseeded control — so the control is visibly running
+    # instead of a silent spinner that reads as "frozen". Each run draws into its own
+    # placeholder via an on_frame callback.
+    _want_twin = bool(seed_on and compare)
+
+    def _stream_cb(ph, bar):
+        fails = [0]
 
         def _cb(step, total, frame, flow):
             try:
                 fig = plots.live_frame_fig(flow, frame, "", 1.0, True, "off",
                                            max(0.3, float(frame["qc"].max())))
-                live.pyplot(fig, clear_figure=True)
+                ph.pyplot(fig, clear_figure=True)
                 plots.close(fig)      # clear_figure clears but doesn't free it
             except Exception:
-                # protect the physics run from a draw hiccup — but if drawing is
-                # SYSTEMATICALLY broken, say so instead of looking frozen.
-                _draw_fails[0] += 1
-                if _draw_fails[0] == 3:
-                    live.caption("Live preview unavailable — the simulation is "
-                                 "still computing in the background.")
+                fails[0] += 1
+                if fails[0] == 3:
+                    ph.caption("Live preview unavailable — still computing.")
             try:
                 bar.progress(min(1.0, step / max(1, total)),
                              text=f"step {step} / {total}")
             except Exception:
                 pass
+        return _cb
 
-        out = cache.run_climate(*clim_args, on_frame=_cb)
+    if _want_twin:
+        _lc = st.columns(2)
+        _lc[0].caption("seeded deck"); _lc[1].caption("control (unseeded)")
+        ph_seed, ph_ctrl = _lc[0].empty(), _lc[1].empty()
+    else:
+        ph_seed, ph_ctrl = st.empty(), None
+
+    # --- seeded deck ---
+    if cache.climate_is_cached(*clim_args):
+        out = cache.run_climate(*clim_args)          # already computed → instant
+    else:
+        if ph_ctrl is not None:
+            ph_ctrl.info("queued — runs right after the seeded deck")
+        bar = st.progress(0.0, text="seeded deck…")
+        out = cache.run_climate(*clim_args, on_frame=_stream_cb(ph_seed, bar))
         bar.empty()
-        live.empty()
 
     if out.get("unstable"):
         st.error("⚠️ This deck went **numerically unstable** (NaN). Try fewer "
@@ -672,36 +694,44 @@ def render_climate():
                  "run length.")
         return
 
-    # control (unseeded) twin AFTER the seeded run — the user has already seen the
-    # live frames, so this wait is contextualized (and skipped when cached).
+    # --- unseeded control twin (also streamed live, into its own column) ---
     twin = None
-    if seed_on and compare:
+    if _want_twin:
         ctrl_args = (background_N, ihmd, False, seed_kind, seed_N, seed_r,
                      inject_min, nt, Nx, Nz, n_super, 1.0, background)
         if cache.climate_is_cached(*ctrl_args):
             twin = cache.run_climate(*ctrl_args)
         else:
-            with st.spinner("Running the unseeded control twin (for the dotted "
-                            "baseline and the forcing estimate)…"):
-                twin = cache.run_climate(*ctrl_args)
+            bar = st.progress(0.0, text="control deck…")
+            twin = cache.run_climate(*ctrl_args, on_frame=_stream_cb(ph_ctrl, bar))
+            bar.empty()
         if twin.get("unstable"):
             st.warning("The unseeded control twin went unstable — showing the "
                        "seeded run without the comparison overlay.")
             twin = None
+
+    # clear the live previews before the final looping animation replaces them
+    ph_seed.empty()
+    if ph_ctrl is not None:
+        ph_ctrl.empty()
     ctrl_ts = twin["ts"] if twin is not None else None
 
     # FULL-WIDTH result (the combined scene+graphs image is wide — don't squeeze it
     # into a narrow column), with the headline metrics in a row underneath.
-    theme.whatami("Stratocumulus deck (seeded droplets ringed magenta) with the "
-                  "MCB metrics — N_d, albedo, CRE — building in sync. The dotted "
-                  "line is the unseeded control.")
+    _dual = twin is not None
+    theme.whatami("Stratocumulus deck (seeded droplets ringed magenta)"
+                  + (" beside the unseeded control deck" if _dual else "")
+                  + " with the MCB metrics — N_d, albedo, CRE — building in sync. "
+                  "The dotted line is the unseeded control.")
     animate = st.toggle("Animate", value=True, key="clim_anim",
                         help="Loop the deck with the graphs growing in sync. "
                              "Turn off to freeze: final deck + interactive graphs.")
     if animate:
-        st.image(plots.climate_scene_series_gif(out, ctrl_ts=ctrl_ts),
-                 use_container_width=True,
-                 caption="Deck + MCB metrics building together (loops from frame 0).")
+        theme.animated_gif(
+            plots.climate_scene_series_gif(out, ctrl_ts=ctrl_ts, ctrl_result=twin),
+            caption=("Seeded vs control deck + MCB metrics building together "
+                     "(loops from frame 0)." if _dual else
+                     "Deck + MCB metrics building together (loops from frame 0)."))
     else:
         st.image(out["png"], use_container_width=True, caption="Final deck (frozen).")
         st.plotly_chart(plots.climate_timeseries(out["ts"], ctrl=ctrl_ts),

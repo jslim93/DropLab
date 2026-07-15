@@ -19,13 +19,17 @@ import matplotlib.pyplot as plt
 from droplab.flow2d import Flow2D
 from droplab.flow2d_dynamic import run_flow2d_dynamic
 from droplab.flow2d_viz import draw_frame_seeded
-from droplab.soundings import DYCOMS, DYCOMS_RADIATION
+from droplab.soundings import DYCOMS, DYCOMS_RADIATION, DYCOMS_FORCING
 from droplab.climate_diag import column_optics
 
-# fixed stratocumulus set-up (everything the student does NOT need to touch)
-_BASE = dict(sounding=DYCOMS, rad_cool=DYCOMS_RADIATION, periodic_x=True,
-             pert_amp=0.1, nu=6, nu_scalar=1.5, collisions=True, switch_TICE=True,
-             eps=0.01, sediment=True, collect_every=100000)
+# fixed stratocumulus set-up (everything the student does NOT need to touch).
+# nu_scalar=0.2 + DYCOMS_FORCING keep the deck alive on multi-hour runs: higher scalar
+# diffusion erodes the sharp inversion (BL dries, deck starves by ~45-60 min), and the
+# forcing resupplies moisture as subcloud-distributed qls/tls + subsidence — NOT
+# bottom-cell H/LE, which turns the deck into surface cumulus (see droplab.soundings).
+_BASE = dict(sounding=DYCOMS, rad_cool=DYCOMS_RADIATION, forcing=DYCOMS_FORCING,
+             periodic_x=True, pert_amp=0.1, nu=6, nu_scalar=0.2, collisions=True,
+             switch_TICE=True, eps=0.01, sediment=True, collect_every=100000)
 
 
 def _seeding_spec(kind, seed_N, seed_r, nt, dt):

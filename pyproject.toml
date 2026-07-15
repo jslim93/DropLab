@@ -17,6 +17,8 @@ dependencies = [
   "xarray>=2023.1", "netCDF4>=1.6",
   # front-ends for the educational notebooks / Streamlit climate app
   "streamlit>=1.30", "jupyter",
+  # scripted/batch runs (run.py reads input.yaml)
+  "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -28,7 +30,9 @@ app = ["streamlit>=1.30", "plotly>=5.18", "Pillow>=10.0"]
 droplab-app = "app.launch:main"
 
 [tool.setuptools]
-packages = ["droplab", "Post_process", "app", "app.ui"]
+# `examples` ships too: app.ui.cache/presets import examples.cloud_cases (the validated
+# CASES registry), so a pip-installed droplab-app dies with ModuleNotFoundError without it.
+packages = ["droplab", "Post_process", "app", "app.ui", "examples"]
 
 [tool.setuptools.package-data]
 # ship the entry script + the page modules (pages/ is a plain dir, not a package)

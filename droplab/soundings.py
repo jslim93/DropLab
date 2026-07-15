@@ -183,6 +183,34 @@ DEEP_CONVECTION_FORCING = dict(
 DYCOMS_RADIATION = dict(F0=70.0, F1=22.0, kappa=85.0)   # W/m^2, W/m^2, m^2/kg
 
 
+# DYCOMS-II RF01 moisture resupply + subsidence (Stevens et al. 2005: LHF=115 W/m^2,
+# SHF=16 W/m^2, divergence D=3.75e-6 /s). Without resupply the deck STARVES: BL vapour
+# leaks up across the sharp inversion (resolved entrainment + residual numerical
+# diffusion) and, unreplenished, the LWP halves within ~1 h and the deck breaks up.
+#
+# CRITICAL IMPLEMENTATION LESSON (learned the hard way -- commit 1c95092 added the
+# fluxes as bottom-cell H/LE and 0be799a had to revert them): injecting 115 W/m^2 of
+# latent flux into ONE ~25-m-thick surface cell out-runs the gentle Sc circulation's
+# ability to carry it up -- moisture pools at the surface and surface-rooted cumulus
+# take over the deck. In reality the (unresolved) surface-layer turbulence spreads the
+# flux through the subcloud mixed layer, so here the fluxes enter as VOLUMETRIC
+# tendencies (qls/tls) distributed below cloud base: uniform over the lowest 600 m,
+# tapered to zero at the 840-m inversion (effective depth 720 m); H=LE=0 keeps the
+# bottom-cell path off. The subsidence profile w=-D*z opposes the entrainment rise of
+# the inversion and continuously RE-SHARPENS the smeared interface (downward advection
+# balancing upward diffusion) -- both halves matter for a multi-hour deck.
+_D_DYC = 3.75e-6                                     # 1/s, RF01 large-scale divergence
+_QLS_DYC = 115.0 / (1.2 * 2.5e6 * 720.0)             # LHF spread over the subcloud layer
+_TLS_DYC = 16.0 / (1.2 * 1004.0 * 720.0)             # SHF likewise
+DYCOMS_FORCING = dict(
+    z=[0.0, 600.0, 840.0, 1500.0],
+    qls=[_QLS_DYC, _QLS_DYC, 0.0, 0.0],              # kg/kg/s
+    tls=[_TLS_DYC, _TLS_DYC, 0.0, 0.0],              # K/s
+    wls=[0.0, -_D_DYC * 600.0, -_D_DYC * 840.0, -_D_DYC * 1500.0],   # m/s
+    H=0.0, LE=0.0,                                   # NOTHING dumped into the bottom cell
+)
+
+
 # Large-scale + surface forcing that SUSTAINS BOMEX shallow cumulus (Siebesma
 # et al. 2003). Without it a single triggered thermal is ~30x too vigorous; with
 # it the convective velocity scale is the observed w* ~ 0.7 m/s, so cumulus stay

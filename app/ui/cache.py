@@ -28,7 +28,8 @@ import streamlit as st
 from droplab.timestep_soa import run_soa
 from droplab.flow2d_dynamic import run_flow2d_dynamic
 from droplab.climate_widget import figure, _seeding_spec, _BASE
-from droplab.climate_diag import column_optics, optics_from_frame, toa_forcing
+from droplab.climate_diag import (column_optics, optics_from_frame, toa_forcing,
+                               cre_from_frame)
 
 from app.ui import presets
 
@@ -203,11 +204,21 @@ def build_twod_config(scenario, resolution, *, collisions, ice, habit,
     if dtheta_bubble is not None and "dtheta_bubble" in cfg:
         cfg["dtheta_bubble"] = float(dtheta_bubble)
 
-    # mid-run seeding (MCB / GCCN), else respect the scenario's own seeding (none).
-    # _seeding_spec hardcodes t_inject; override it so the user controls timing.
+    # mid-run seeding (MCB / GCCN / glaciogenic INP), else respect the scenario's own
+    # seeding (none). _seeding_spec hardcodes t_inject; override it so the user
+    # controls timing.
     if seed_on:
-        spec = _seeding_spec(seed_kind, float(seed_N), float(seed_r),
-                             cfg["nt"], cfg["dt"])
+        if seed_kind == "Glaciogenic INP (ice)":
+            # direct-ice injection into the cloud layer (phase='ice'), mirroring the
+            # Climate page's _inp_seeding_spec — the liquid _seeding_spec would inject
+            # CCN and BRIGHTEN the deck, the opposite sign of the glaciation lesson
+            # this seed kind teaches.
+            z_top = cfg["Z"]
+            spec = _inp_seeding_spec(cfg["nt"], cfg["dt"], float(seed_N),
+                                     z_lo=0.45 * z_top, z_hi=0.72 * z_top)
+        else:
+            spec = _seeding_spec(seed_kind, float(seed_N), float(seed_r),
+                                 cfg["nt"], cfg["dt"])
         if inject_min is not None:
             spec["t_inject"] = float(inject_min) * 60.0
         cfg["seeding"] = spec
@@ -226,7 +237,7 @@ _TWOD_CAP = 16
 
 # Bump when build_twod_config's mapping or the engine physics changes so stale disk
 # entries (e.g. pre-CFL-guard NaN results) can never be served for the same widget args.
-_CFG_VERSION = 6
+_CFG_VERSION = 10
 
 
 def _twod_key(scenario, resolution, nt, dt, collisions, ice, habit,
@@ -320,7 +331,8 @@ def run_twod(scenario, resolution, nt, dt, collisions, ice, habit, electrificati
                 resolution=resolution, ice=cfg["ice"], habit=cfg["habit"],
                 electrification=cfg["electrification"],
                 anelastic=(cfg.get("dynamics") == "anelastic"),
-                seed_on=bool(seed_on))
+                seed_on=bool(seed_on),
+                P_col=out.get("P_col"))     # level pressure, for the T background field
     payload = {
         "unstable": False,
         "frames": frames,
@@ -353,10 +365,16 @@ from examples.cloud_cases import CASES as _CASES
 from droplab.soundings import BOMEX as _BOMEX_SND
 
 _CLIM_BG = {
-    # DYCOMS runs UNFORCED (no surface fluxes, no large-scale tendencies): the
-    # radiatively driven deck stays a stratocumulus sheet; adding fluxes turns
-    # it into surface-rooted cumulus, which misrepresents the regime.
-    "DYCOMS stratocumulus": dict(extra={}, X=_CLIM_X, Z=_CLIM_Z, ice=False),
+    # DYCOMS forcing + low scalar diffusion, UNIFIED with CASES['dycoms'] (single
+    # source). The deck needs both to survive the 2-h Climate runs: nu_scalar 0.2
+    # keeps the sharp inversion from diffusing away (the old 1.5 dried the BL out
+    # by ~45 min), and DYCOMS_FORCING resupplies moisture as SUBCLOUD-DISTRIBUTED
+    # qls/tls (+ subsidence) -- NOT bottom-cell H/LE, which pooled moisture at the
+    # surface and turned the deck into surface-rooted cumulus (the 0be799a revert).
+    "DYCOMS stratocumulus": dict(
+        extra=dict(forcing=_CASES["dycoms"]["forcing"],
+                   nu_scalar=_CASES["dycoms"]["nu_scalar"]),
+        X=_CLIM_X, Z=_CLIM_Z, ice=False),
     "BOMEX cumulus": dict(
         extra=dict(sounding=_CASES["bomex"]["sounding"],
                    forcing=_CASES["bomex"]["forcing"], nu=14, nu_scalar=1.5),
@@ -366,17 +384,26 @@ _CLIM_BG = {
                    rad_cool=_CASES["arctic"]["rad_cool"], ice=True,
                    freezing_mode="abifm", inp_n_cm3=_CASES["arctic"]["inp_n_cm3"],
                    inp_r_um=_CASES["arctic"]["inp_r_um"],
-                   inp_sigma=_CASES["arctic"]["inp_sigma"], nu=6, nu_scalar=1.0),
-        X=4800.0, Z=2600.0, ice=True, drop=("rad_cool",)),
+                   inp_sigma=_CASES["arctic"]["inp_sigma"],
+                   inp_frac=_CASES["arctic"]["inp_frac"], nu=6, nu_scalar=1.0),
+        # drop the DYCOMS forcing _BASE now carries: MOSAiC runs unforced
+        X=4800.0, Z=2600.0, ice=True, drop=("rad_cool", "forcing")),
 }
 
 
 def _inp_seeding_spec(nt, dt, seed_N, z_lo, z_hi):
     """Glaciogenic (direct-ice) injection: INP-born ice embryos into the cloud layer
-    (engine spec phase='ice'; same canonical keys as tests/test_ice.py)."""
+    (engine spec phase='ice'; same canonical keys as tests/test_ice.py).
+
+    The seed AMOUNT (N_cm3) scales the injected super-droplets' WEIGHT FACTOR
+    (multiplicity), not their COUNT: _inject_aerosol splits N_cm3*V over a FIXED
+    n_super, so a heavier seeding is a higher weight per SD, not more SDs — the run
+    cost stays flat regardless of how much you seed. n_super is kept modest (2000) so
+    the injection itself is cheap; the ice it makes is finely enough sampled at that
+    weight for the intervention demo."""
     return dict(t_inject=max(50.0, 0.25 * nt * dt), x_frac=(0.0, 1.0),
                 z_lo=z_lo, z_hi=z_hi, N_cm3=seed_N, r_um=2.0, r_wet_um=2.0,
-                kappa=0.6, n_super=6000, phase="ice")
+                kappa=0.6, n_super=2000, phase="ice")
 
 
 def _clim_key(background_N, ihmd, seed_on, seed_kind, seed_N, seed_r, inject_min,
@@ -465,10 +492,17 @@ def run_climate(background_N, ihmd, seed_on, seed_kind, seed_N, seed_r,
     fig.savefig(buf, format="png", dpi=110, bbox_inches="tight")
     plt.close(fig)
 
-    # per-frame MCB metrics: N_d (cm^-3), albedo, short-wave CRE (W/m^2)
+    # per-frame metrics: N_d (cm^-3), albedo, r_eff, precip, and the full cloud
+    # radiative effect split — SW (cooling), LW (warming), net — in W/m^2.
     fr = res["frames"]
+    T_col = res.get("T_col")
+    # daylight factor for the SW CRE: the Arctic MOSAiC deck is polar night, so SW is
+    # near zero there and the LONG-WAVE effect dominates (dimming a polar liquid deck
+    # lets long-wave escape -> cooling); marine decks get a representative daytime sun.
+    mu0 = 0.1 if background == "Arctic mixed-phase" else 0.5
     cell_cm3 = flow.dx * flow.dz * depth * 1e6
     t, nc, alb, cre, reff, prc = [], [], [], [], [], []
+    swc, lwc, netc = [], [], []
     for f in fr:
         of = optics_from_frame(f, flow)
         a = of["albedo_mean"]
@@ -476,11 +510,18 @@ def run_climate(background_N, ihmd, seed_on, seed_kind, seed_N, seed_r,
         cre.append(toa_forcing(a))
         reff.append(float(of["reff_mean"]) * 1e6)
         prc.append(float(f.get("surf_precip", 0.0)))
+        rad = cre_from_frame(f, flow, T_col, mu0=mu0) if T_col is not None else None
+        swc.append(rad["swcre_mean"] if rad else 0.0)
+        lwc.append(rad["lwcre_mean"] if rad else 0.0)
+        netc.append(rad["net_mean"] if rad else 0.0)
         cloudy = f["r_um"] > 1.0
+        if "phase" in f:                     # mixed-phase runs: N_d counts DROPLETS,
+            cloudy = cloudy & (f["phase"] == 0)   # not ice crystals (qc is liquid-only)
         ncell = max(1, int((f["qc"] > 0.01).sum()))
         nc.append(float(f["A"][cloudy].sum()) / (ncell * cell_cm3))
         t.append(float(f["step"]) * dt)
-    ts = dict(t=t, nc=nc, albedo=alb, cre=cre, reff=reff, precip=prc)
+    ts = dict(t=t, nc=nc, albedo=alb, cre=cre, reff=reff, precip=prc,
+              swcre=swc, lwcre=lwc, netcre=netc)
     meta = dict(X=flow.X, Z=flow.Z, Nx=flow.Nx, Nz=flow.Nz, dx=flow.dx,
                 dz=flow.dz, depth=depth, dt=dt, seed_on=bool(seed_on))
     payload = {
@@ -518,18 +559,24 @@ def demo_twod_args(demo):
     base = presets.base_config(sc)
     t = demo["toggles"]
     ice = bool(t.get("ice", False))
-    habit = bool(t.get("habit", False))
-    elec = bool(t.get("electrification", False))
+    # mirror the UI COUPLINGS, not the raw toggles: microphysics_panel forces
+    # habit = ice and electrification = ice & ELECTRIFY_SCENARIOS (controls.py) —
+    # a demo key built from independent toggles warmed a key no button ever hits.
+    habit = ice
+    elec = bool(ice and sc in presets.ELECTRIFY_SCENARIOS)
     dt = float(m["dt_default"])
     nt = presets.default_nt(sc)
     seed = controls.SEED_DEFAULTS["MCB sea-salt"]
     bubble = {"idealized", "congestus", "deep_cold", "deep_convection"}
     dtheta = float(base.get("dtheta_bubble", 2.5)) if sc in bubble else None
-    inp_n = float(base.get("inp_n_cm3", 0.5)) if ice else None
+    # UI defaults: the INP slider default is hardcoded 1.0 in controls.py; the
+    # aerosol N default is the scenario's own CASES value (modes.py) — match both.
+    inp_n = 1.0 if ice else None
     inp_r = float(base.get("inp_r_um", 3.0)) if ice else None
+    _bN = float(base["N_modes"][0])
     return (sc, "quick", nt, dt, bool(t.get("collisions", True)), ice, habit, elec,
             "abifm", True, True, True,
-            (200.0,), (0.08,), (2.0,), (0.6,),
+            (_bN,), (0.08,), (2.0,), (0.6,),
             False, "MCB sea-salt", float(seed["N"]), float(seed["r"]),
             round(0.25 * m["default_min"], 1), 0.0, dtheta, inp_n, inp_r,
             400.0, 0.3)

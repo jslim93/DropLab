@@ -44,7 +44,10 @@ def aerosol_two_mode(key: str, default_N=200.0, default_mu=0.08,
 SEED_KINDS = ["MCB sea-salt", "GCCN (precip)", "Glaciogenic INP (ice)"]
 _GCCN_N_OPTS = [1e-3, 2e-3, 5e-3, 1e-2, 2e-2, 5e-2, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0]
 SEED_DEFAULTS = {
-    "Glaciogenic INP (ice)": dict(N=1.0, r=2.0),
+    # N in cm^-3. Glaciogenic INP is a DILUTE intervention (0.01 cm^-3 = 10/L) — a few
+    # times the ~1/L Arctic base INP, enough to visibly enhance glaciation without
+    # instantly collapsing the deck. (Was 1.0 cm^-3 = 1000/L, which glaciated everything.)
+    "Glaciogenic INP (ice)": dict(N=0.01, r=2.0),
     "MCB sea-salt": dict(N=500.0, r=0.2),   # many tiny → brighten
     "GCCN (precip)": dict(N=0.01, r=2.0),     # a few giant → trigger rain
 }
@@ -65,10 +68,14 @@ def seed_amount_size(key: str, kind: str, disabled: bool = False):
         r = st.slider("Seed dry radius (µm)", 0.05, 0.5, d["r"], 0.01,
                       disabled=disabled, key=f"{key}_seedr_mcb")
     elif kind == "Glaciogenic INP (ice)":
-        N = st.slider("Seed amount N (cm⁻³)", 0.1, 5.0, d["N"], 0.1,
-                      disabled=disabled, key=f"{key}_seedN_inp",
-                      help="Ice-nucleating particles injected as ice embryos → the "
-                           "deck glaciates (WBF) and DIMS — the cold-regime lever.")
+        # per LITRE (natural INP units): a dilute intervention a few× the ~1/L base.
+        N_L = st.slider("Seed amount (L⁻¹)", 1.0, 100.0, d["N"] * 1e3, 1.0,
+                        disabled=disabled, key=f"{key}_seedN_inp",
+                        help="Ice-nucleating particles injected as ice embryos → the "
+                             "deck glaciates (WBF) and DIMS — the cold-regime lever. "
+                             "A few ×/L above the ~1/L base is a realistic seeding; "
+                             "≳100/L glaciates the whole deck at once.")
+        N = N_L * 1e-3
         r = 2.0
     else:  # GCCN — N spans decades → a log select-slider
         N = st.select_slider("Seed amount N (cm⁻³)", options=_GCCN_N_OPTS,
@@ -132,13 +139,22 @@ def microphysics_panel(scenario: str, key: str, *, ice0=False, habit0=False,
         inp_n_cm3, inp_r_um = None, None
         if ice:
             _b = presets.base_config(scenario)
-            inp_n_cm3 = st.slider(
-                "INP concentration (cm⁻³)", 0.0, 2.0, 1.0, 0.05,
+            # INP is conventionally quoted per LITRE; the case default is the SAM6-LCM
+            # MOSAIC value (~1/L). Default and range both come from the scenario so the
+            # app reproduces the case's persistent mixed-phase regime out of the box.
+            _inp_L = st.slider(
+                "INP concentration (L⁻¹)", 0.0, 50.0,
+                float(round(_b.get("inp_n_cm3", 0.001) * 1e3, 1)), 0.5,
                 key=f"{key}_{scenario}_inp",
-                help="Ice-nucleating particles. Fewer → more persistent supercooled "
-                     "liquid; more → faster glaciation.")
-            inp_r_um = st.slider("INP radius (µm)", 0.5, 6.0,
-                                 float(_b.get("inp_r_um", 3.0)), 0.5,
+                help="Ice-nucleating particles per litre. Fewer → more persistent "
+                     "supercooled liquid; more → faster glaciation (≳50/L glaciates "
+                     "the whole deck).")
+            inp_n_cm3 = _inp_L * 1e-3
+            # INP RADIUS is the dominant freezing-rate knob (ABIFM area ~ r²): a smaller
+            # core freezes far more slowly. Realistic immersion INP are sub-micron; the
+            # case default is the SAM MOSAIC 0.37 µm. Fine step so it can be represented.
+            inp_r_um = st.slider("INP radius (µm)", 0.1, 6.0,
+                                 float(_b.get("inp_r_um", 0.37)), 0.01,
                                  key=f"{key}_{scenario}_inpr")
 
         freezing_mode, homogeneous, melt, hm = "abifm", True, True, True

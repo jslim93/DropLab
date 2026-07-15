@@ -167,7 +167,7 @@ def _run_soa_ascent(seed, n_ptcl, nt, dt=1.0, T0=293.2, P0=1013e2, RH=0.92, w=1.
         p = particles(0)
         p.M, p.A, p.Ns, p.kappa = M[k], A[k], Ns[k], kap[k]
         pl.append(p)
-    _, _, qc, qr, NA, NC, NR, _, _, _, _, _, _ = ts_analysis(pl, am, [1e-6, 25e-6], 60, n_ptcl)
+    _, _, qc, qr, NA, NC, NR, _, _, _, _, _, _ = ts_analysis(pl, am, [1e-6, 25e-6], 60, n_ptcl, rp)
     return qc, qr, NR
 
 
