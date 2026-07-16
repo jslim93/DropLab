@@ -86,7 +86,7 @@ def _rearrange_numba(eta, s0, n_last, dz_sgs, eta_k, L_turb, dz_cell, dsdz):
 
 
 @njit(cache=True)
-def _mix_kernel(eta, starts, counts, ssg, Tg, dz_cell, eps, dt, supersat_fluct, min_sd,
+def _mix_kernel(eta, starts, counts, ssg, Tg, epsg, dz_cell, dt, supersat_fluct, min_sd,
                 rho_air, s_active):
     """Per-cell SAM-LCM mixing (micro_sgs_mixing L63-196), serial over cell-sorted groups.
     For each CLOUDY cell (mean supersaturation >= s_active) with > min_sd SDs: substep-stable
@@ -98,6 +98,7 @@ def _mix_kernel(eta, starts, counts, ssg, Tg, dz_cell, eps, dt, supersat_fluct, 
         if n_last <= min_sd or ssg[gi] < s_active:       # skip small or clear cells
             continue
         s0 = starts[gi]
+        eps = epsg[gi]                                    # per-cell dissipation rate
         dz_sgs = dz_cell / n_last
         eta_k = 6.0 * dz_sgs
         L_turb = dz_cell                                 # SAM L67: max(min(smix, dz_LCM), 1e-3)
@@ -155,13 +156,14 @@ def nudge_and_mix(eta_sd, w_sgs, cidx, supersat_flat, T_flat, n_cells, dz_cell, 
     sc = supersat_flat[cidx]
     np.clip(eta_sd, sc - s_max, sc + s_max, out=eta_sd)             # bound subgrid anomaly
 
+    eps_arr = np.full(n_cells, float(eps)) if np.ndim(eps) == 0 else np.asarray(eps, float)
     order = np.argsort(cidx, kind="stable")
     cs = cidx[order]
     uniq, starts = np.unique(cs, return_index=True)                 # cs sorted -> contiguous groups
     counts = np.diff(np.append(starts, cs.shape[0]))
     eta_sorted = np.ascontiguousarray(eta_sd[order])
     _mix_kernel(eta_sorted, starts.astype(np.int64), counts.astype(np.int64),
-                supersat_flat[uniq], T_flat[uniq], float(dz_cell), float(eps), float(dt),
+                supersat_flat[uniq], T_flat[uniq], eps_arr[uniq], float(dz_cell), float(dt),
                 bool(supersat_fluct), int(min_sd), float(rho_air), float(s_active))
     eta_sd[order] = eta_sorted
 
@@ -169,15 +171,15 @@ def nudge_and_mix(eta_sd, w_sgs, cidx, supersat_flat, T_flat, n_cells, dz_cell, 
 def sgs_velocity_step(w_sgs, eps, dz_cell, dt, rng):
     """Per-SD AR-1 (Langevin) subgrid vertical velocity (SAM micro_sgs_uvw.f90 L26-47).
     sigma = sqrt(2/3 tke), tke = (D_turb/(0.1 L))^2 (Deardorff), RL = exp(-dt/(tk/tke)).
-    Returns the updated w_sgs and the per-SD vertical displacement w_sgs*dt [m] used to
-    transport the SDs (so transport, and hence broadening, scales with the turbulence)."""
+    Returns the updated w_sgs and the per-SD vertical displacement w_sgs*dt [m]. eps may be a
+    scalar (prescribed) or a per-SD array (strain-derived from the Smagorinsky closure), so
+    the subgrid velocity -- and the broadening -- scale with the LOCAL resolved turbulence."""
     L = max(dz_cell, 1.0e-3)
-    D_turb = 0.1 * L ** (4.0 / 3.0) * eps ** (1.0 / 3.0)
+    D_turb = 0.1 * L ** (4.0 / 3.0) * np.asarray(eps, float) ** (1.0 / 3.0)
     tke = (D_turb / (0.1 * L)) ** 2
-    if tke < 1.0e-4:
-        w_sgs[:] = 0.0
-        return w_sgs, np.zeros_like(w_sgs)
-    sigma = math.sqrt(2.0 / 3.0 * tke)
-    RL = math.exp(-dt / (D_turb / tke + 1.0e-20))
-    w_sgs[:] = RL * w_sgs + math.sqrt(1.0 - RL ** 2) * sigma * rng.standard_normal(w_sgs.shape)
+    sigma = np.sqrt(2.0 / 3.0 * tke)
+    RL = np.exp(-dt / (D_turb / np.maximum(tke, 1.0e-30)))
+    w_new = RL * w_sgs + np.sqrt(1.0 - RL ** 2) * sigma * rng.standard_normal(w_sgs.shape)
+    w_new = np.where(tke < 1.0e-4, 0.0, w_new)                       # laminar cells: no SGS wind
+    w_sgs[:] = w_new
     return w_sgs, w_sgs * dt

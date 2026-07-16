@@ -31,6 +31,7 @@ from droplab.collision_soa import seed_numba_rng
 from droplab import electrification as _elec
 from droplab import ice_habit as _hab
 from droplab import lem_driver as _lem
+from droplab import sgs_smagorinsky as _smag
 from droplab.flow2d_driver import (_base_state, _init_droplets, _rh_profile,
                                  _cond_local, _cond_local_sd, _cell_index, _collide_cells,
                                  _esatw_v, _sigma_v, _fall_speeds)
@@ -375,7 +376,9 @@ def run_flow2d_dynamic(nt=1500, dt=1.5, Nx=96, Nz=72, X=4800.0, Z=3000.0,
                        flash_neutralize=0.7, flash_radius=2, flash_rearm=0.95,
                        sd_per_cell=None, sim_hours=None,
                        habit=False, collide_parallel=False,
-                       lem=False, lem_eps=1.0e-3, lem_tau=900.0):
+                       lem=False, lem_eps=1.0e-3, lem_tau=900.0,
+                       smagorinsky=True, smag_cs=0.17,
+                       entrain_mode="off", entrain_eps=1.0e-3, entrain_ce=2.0e-3):
     """Buoyancy-driven 2D cumulus. A warm moist bubble triggers the thermal;
     everything after is self-organized. With `sounding` (e.g. droplab.soundings.BOMEX)
     the cloud is capped by a REAL inversion; otherwise the free troposphere is
@@ -622,7 +625,15 @@ def run_flow2d_dynamic(nt=1500, dt=1.5, Nx=96, Nz=72, X=4800.0, Z=3000.0,
         # vorticity source is -db/dx for omega = du/dz - dw/dx (with lap(psi)=-omega):
         # a warm bubble (b>0 centre) then drives a CENTRAL updraft. (A + sign here
         # reverses the circulation -> spurious central downdraft, split cloud.)
-        omega = omega + dt * (-_ddx_op(b, flow.dx) + nu * _lap_om(omega, flow.dx, flow.dz))
+        if smagorinsky:
+            # SGS closure: eddy viscosity from the resolved strain diffuses vorticity with
+            # nu+nu_t; the SGS dissipation eps_sgs is the local turbulence intensity for the LEM.
+            nu_t, Smag = _smag.strain_viscosity(uc, wc, flow.dx, flow.dz, smag_cs, periodic_x)
+            eps_sgs = _smag.dissipation(nu_t, Smag)
+            omega = omega + dt * (-_ddx_op(b, flow.dx)
+                                  + _smag.div_nu_grad(omega, nu + nu_t, flow.dx, flow.dz, periodic_x))
+        else:
+            omega = omega + dt * (-_ddx_op(b, flow.dx) + nu * _lap_om(omega, flow.dx, flow.dz))
         # hard vorticity backstop: Poisson is linear, so bounding omega bounds the
         # velocities -> bounds lifting -> no condensation runaway (the moist
         # instability cannot accumulate omega unboundedly).
@@ -639,7 +650,12 @@ def run_flow2d_dynamic(nt=1500, dt=1.5, Nx=96, Nz=72, X=4800.0, Z=3000.0,
         else:
             x, z = flow.advect(x, z, dt)
         if lem:                                    # subgrid vertical transport (SAM micro_sgs_uvw):
-            w_sgs, _dz_sgs = _lem.sgs_velocity_step(w_sgs, lem_eps, flow.dz, dt, _lem_rng)
+            if smagorinsky:                        # turbulence intensity from the resolved strain
+                _, _, _cidx_w = _cell_index(flow, x, z)
+                _eps_w = eps_sgs.ravel()[_cidx_w]
+            else:
+                _eps_w = lem_eps               # prescribed (fixed) dissipation rate
+            w_sgs, _dz_sgs = _lem.sgs_velocity_step(w_sgs, _eps_w, flow.dz, dt, _lem_rng)
             z = np.clip(z + _dz_sgs, 0.0, flow.Z)  # carries each SD's eta memory between cells
         if sediment:                               # drops fall at their terminal speed
             iz = np.clip((z / flow.dz).astype(np.int64), 0, flow.Nz - 1)
@@ -746,6 +762,77 @@ def run_flow2d_dynamic(nt=1500, dt=1.5, Nx=96, Nz=72, X=4800.0, Z=3000.0,
         # and INP-surface-area-dependent rate; Bigg is the simple one-knob alternative.
         # Freezing releases latent heat of fusion into theta.
         ix, iz, cidx = _cell_index(flow, x, z)
+
+        # 3c. entrainment-mixing closure (the missing STAGE-2 of entrainment). A passive-
+        # tracer diagnostic showed the resolved 2D flow already folds environmental air into
+        # clouds (engulfment, stage 1), but the engulfed filaments never homogenize (bimodal
+        # tracer PDF; refining the grid makes it MORE bimodal because the little mixing that
+        # existed was MPDATA numerical diffusion). Without stage 2 the cloud-layer latent-heat
+        # buoyancy flux self-amplifies and BOMEX over-produces cloud ~20x vs LES (a SAM-2D
+        # control run at the same grid proved this is NOT a 2D artifact). Momentum closures
+        # cannot fix it (Smagorinsky is a measured no-op on LWP): the missing dissipation is
+        # THERMODYNAMIC. This block supplies it as linear adiabatic mixing of cloudy cells
+        # with the clear-sky environment at rate r = eps*|w|*dt (bulk entraining-plume:
+        # d(phi)/dz = -eps*(phi - phi_env)), diluting vapor, temperature AND condensate by the
+        # same fraction (conserves q_t and ~theta_l; droplet NUMBER kept -> cloud fraction
+        # survives, unlike vapor-only dilution). NO saturation adjustment here -- the sub/
+        # supersaturation left behind is handled by the condensation step.
+        #   entrain_mode="const": prescribed eps = entrain_eps [1/m] (obs shallow-cumulus
+        #     lateral rate ~1e-3 = 1/km; Sc ~0.3e-3). One eps does NOT fit all regimes.
+        #   entrain_mode="auto":  EDGE-SHELL closure -- mix only cloudy cells adjacent to
+        #     clear air at the single universal rate entrain_ce. The bulk dilution then
+        #     scales as entrain_ce * (edge cells / cloud cells) ~ 1/R automatically
+        #     (Siebesma eps~0.2/R): narrow cumulus mixes hard, wide Sc decks and cores are
+        #     interior-protected. Validated: BOMEX LWP 208->80 (top 1432m ~ obs), DYCOMS
+        #     LWP 51 (LES 50-60), congestus sub-adiabatic, arctic MPC survives.
+        #   CAVEAT deep convection: lateral-entrainment closures over-dilute organized deep
+        #     cores and thin anvils (the classic entrainment dilemma) -- even eps=0.05e-3
+        #     kills the anvil IWP. Keep entrain_mode="off" for deep cases (b_max is the
+        #     crude dilution closure there).
+        # CONSERVATIVE: everything removed from cloudy cells is deposited into the SAME
+        # level's clear cells -- detrained vapor + theta excess mix in directly, detrained
+        # condensate EVAPORATES there (moistening + evaporative cooling; l_s for ice), so
+        # domain water and (moist-static) energy budgets close instead of leaking.
+        if entrain_mode != "off":
+            _qcnd = np.zeros(Nx * Nz)
+            np.add.at(_qcnd, cidx, M)                              # all condensate (liq+ice)
+            _cloudy = (_qcnd / air_mass_cell).reshape(Nx, Nz) > 1.0e-5
+            _clear = ~_cloudy
+            _ncl = _clear.sum(axis=0)
+            _qv_env = np.where(_ncl > 0, np.where(_clear, qv, 0.0).sum(0) / np.maximum(_ncl, 1),
+                               qv.mean(0))
+            _th_env = np.where(_ncl > 0, np.where(_clear, theta, 0.0).sum(0) / np.maximum(_ncl, 1),
+                               theta.mean(0))
+            if entrain_mode == "auto":                             # edge shell: cloudy next to clear
+                _nb = np.roll(_clear, 1, 0) | np.roll(_clear, -1, 0)   # x neighbours (periodic)
+                _nb[:, 1:] |= _clear[:, :-1]                           # z neighbours (no wrap)
+                _nb[:, :-1] |= _clear[:, 1:]
+                _epsf = np.where(_cloudy & _nb, entrain_ce, 0.0)
+            else:                                                  # "const": prescribed rate
+                _epsf = entrain_eps
+            _wce = 0.5 * (flow.w[:, :-1] + flow.w[:, 1:])
+            _r = np.minimum(_epsf * np.abs(_wce) * dt, 0.5) * _cloudy
+            _r *= (_ncl[None, :] > 0)                              # no clear air to mix with -> skip
+            _dqv = _r * (qv - _qv_env[None, :])                    # removed from cloudy cells
+            _dth = _r * (theta - _th_env[None, :])
+            qv -= _dqv
+            theta -= _dth
+            _rc = _r.ravel()[cidx]
+            _dM = M * _rc                                          # detrained condensate per SD
+            M -= _dM
+            # deposit into the level's clear cells (equal air mass per level)
+            _dml = np.zeros(Nx * Nz); np.add.at(_dml, cidx, np.where(phase == 0, _dM, 0.0))
+            _dmi = np.zeros(Nx * Nz); np.add.at(_dmi, cidx, np.where(phase == 1, _dM, 0.0))
+            _dql_lvl = (_dml / air_mass_cell).reshape(Nx, Nz).sum(0)   # summed mixing ratios
+            _dqi_lvl = (_dmi / air_mass_cell).reshape(Nx, Nz).sum(0)
+            _Pi_col = (P_col / p0) ** kap
+            _shr = np.where(_ncl > 0, 1.0 / np.maximum(_ncl, 1), 0.0)
+            _addq = (_dqv.sum(0) + _dql_lvl + _dqi_lvl) * _shr
+            _addt = (_dth.sum(0) - (l_v / cp) * _dql_lvl / _Pi_col
+                     - (l_s / cp) * _dqi_lvl / _Pi_col) * _shr
+            qv = np.maximum(qv + np.where(_clear, _addq[None, :], 0.0), 0.0)
+            theta = theta + np.where(_clear, _addt[None, :], 0.0)
+
         if ice:
             T_cell = theta * (P_col[None, :] / p0) ** kap          # (Nx,Nz)
             frozen_mass = np.zeros(Nx * Nz)
@@ -785,8 +872,9 @@ def run_flow2d_dynamic(nt=1500, dt=1.5, Nx=96, Nz=72, X=4800.0, Z=3000.0,
             # diffusion + triplet rearrangement). The SD's LEM anomaly (eta_sd - cell mean) is
             # then held while the resolved supersaturation depletes across the substeps.
             _Tss, _ss0, _, _, _ = _thermo()
+            _eps_lem = eps_sgs.ravel() if smagorinsky else lem_eps   # strain-derived or fixed
             _lem.nudge_and_mix(eta_sd, w_sgs, cidx, _ss0.ravel(), _Tss.ravel(), Nx * Nz,
-                               flow.dz, lem_eps, lem_tau, dt, _lem_rng)
+                               flow.dz, _eps_lem, lem_tau, dt, _lem_rng)
             _eta_anom = eta_sd - _ss0.ravel()[cidx]     # memory-carrying supersat anomaly
         for _ in range(n_sub):
             T, supersat, G, r0, afac = _thermo()
@@ -965,6 +1053,10 @@ def run_flow2d_dynamic(nt=1500, dt=1.5, Nx=96, Nz=72, X=4800.0, Z=3000.0,
                 frame["q_liquid"] = qc
                 frame["q_ice"] = (ice_m / air_mass_cell).reshape(Nx, Nz) * 1e3
                 frame["phase"] = phase.copy()
+            if smagorinsky:                            # SGS turbulence field (Smagorinsky)
+                _nut, _Sm = _smag.strain_viscosity(uc, wc, flow.dx, flow.dz, smag_cs, periodic_x)
+                frame["nu_t"] = _nut.copy()
+                frame["eps_sgs"] = _smag.dissipation(_nut, _Sm).copy()
             if lem:                                    # per-SD prognostic supersaturation
                 frame["eta_sd"] = eta_sd.copy()
                 _, _ssd, _, _, _ = _thermo()

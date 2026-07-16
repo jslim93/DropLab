@@ -14,6 +14,10 @@ def _deep_cold(**over):
     off so the domain is a closed water/energy budget (riming is a pure transfer)."""
     cfg = dict(CASES["deep_cold"])
     cfg.update(nt=240, collect_every=240, sediment=False)
+    # pin the SGS off: this test isolates RIMING (a ~10% signal over collision RNG noise);
+    # the default-on Smagorinsky perturbs the flow trajectories enough to flip the marginal
+    # 5-seed mean without touching riming physics at all.
+    cfg.update(smagorinsky=False)
     cfg.update(over)
     return cfg
 

@@ -86,6 +86,31 @@ configurations — seconds to a couple of minutes each on a laptop).
 - Forcings: DYCOMS cloud-top radiative cooling, surface fluxes, subsidence, diurnal cycle;
   reference soundings (BOMEX, RICO, DYCOMS, congestus, Arctic MOSAiC, Weisman–Klemp)
 
+**Entrainment-mixing closure (2-D; preset per case)**
+- The resolved 2-D flow *engulfs* environmental air into clouds but cannot homogenize the
+  filaments (no 3-D turbulent cascade) — without a closure the cloud-layer latent-heat
+  feedback over-produces cloud ~20× vs LES (verified against a SAM LES run in 2-D on the
+  same grid, so this is model-specific, not a dimensionality artifact)
+- `entrain_mode="auto"` — **edge-shell mixing**: only cloudy cells adjacent to clear air mix
+  (linear adiabatic blending of θ, q_v and condensate toward the clear-sky environment at
+  rate ε·|w|; detrained water/heat is deposited conservatively into the same level's clear
+  cells, where condensate evaporates). Bulk dilution then scales as edge/area ∝ 1/R
+  automatically (Siebesma ε≈0.2/R): narrow cumulus mixes strongly, wide stratocumulus decks
+  and cores stay interior-protected. Validated on BOMEX (LWP roughly halved, cloud top ≈
+  observed, sub-adiabatic in-cloud water), congestus and the Arctic mixed-phase deck (MPC
+  survives). On a *solid* Sc deck the closure correctly self-limits to ~no-op (no clear air
+  at deck level to mix with — real Sc dilution is **cloud-top** entrainment, a different
+  mechanism not yet modelled, so Sc LWP retains a high bias).
+- `entrain_mode="const"` — prescribed ε (observed lateral rates: shallow cumulus ~1 km⁻¹,
+  Sc ~0.3 km⁻¹). **Deep convection keeps entrainment off**: lateral-entrainment closures
+  over-dilute organized deep cores and thin anvils (the classic entrainment dilemma).
+
+**Sub-grid eddy viscosity (Smagorinsky, on by default)**
+- ν_t=(C_sΔ)²|S| from the resolved strain, applied to vorticity and feeding the LEM's local
+  dissipation rate. At the shipped viscosities its effect is intentionally small (an adaptive
+  safety net that strengthens only where strain spikes); it is **not** what fixes the
+  entrainment problem above — that closure is thermodynamic, this one is momentum.
+
 **Electrification & lightning (opt-in, diagnostic, *illustrative*)**
 - Non-inductive graupel–crystal charging (lab-based δq, charge-reversal temperature),
   Gauss-law E-field, dielectric-breakdown (DBM) discharge with multi-stroke flashes and a
@@ -246,7 +271,10 @@ equivalent — not bit-identical — random realization).
 Read these before interpreting results (§8 of the model paper has the full discussion):
 
 - **2-D dynamics** cannot represent the 3-D turbulent cascade; coarse-grid moist convection is
-  kept stable by buoyancy/vorticity limiters (a crude entrainment closure). Qualitative.
+  kept stable by buoyancy/vorticity limiters. The edge-shell entrainment closure restores the
+  missing subgrid mixing for broken cumulus fields (validated vs a SAM-2D control); it
+  correctly does ~nothing for solid stratocumulus decks, whose **cloud-top** entrainment is
+  not yet modelled (Sc LWP retains a high bias), and stays off for deep convection.
 - **Electrification/lightning** is diagnostic-only and *illustrative*: charge magnitudes are
   ~10²–10³ below real storms (small graupel, short charging in 2-D), so an illustrative
   breakdown threshold is used. Teach the causal chain, not the numbers.

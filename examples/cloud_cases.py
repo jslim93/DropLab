@@ -26,13 +26,20 @@ from droplab.soundings import (BOMEX, CONGESTUS, DYCOMS, RICO, FOG, ISDAC, MOSAI
 _COMMON = dict(pert_amp=0.1, collect_every=400, seed=3)
 
 CASES = {
+    # entrain_mode="auto" (edge-shell entrainment mixing): without it the 2D flow engulfs
+    # environment into clouds but never homogenizes the filaments, and the cloud-layer
+    # latent-heat feedback over-produces cloud ~20x vs LES (SAM-2D control at the same grid
+    # proved this is droplab-specific, not a 2D artifact). With it, BOMEX lands at LWP~90
+    # (off: ~170 on this branch), cloud top ~1600 m (obs ~1500), in-cloud qc at the observed
+    # sub-adiabatic level. Validated cases carry the preset; deep convection must NOT (below).
     "bomex": dict(nt=1500, dt=2.0, Nx=96, Nz=72, X=4800, Z=3000, n_super=50000,
                   sounding=BOMEX, forcing=BOMEX_FORCING, N_modes=(200.,), nu=14,
-                  nu_scalar=1.5, collisions=False, sediment=True, **_COMMON),
+                  nu_scalar=1.5, collisions=False, sediment=True,
+                  entrain_mode="auto", **_COMMON),
     "congestus": dict(nt=1800, dt=2.0, Nx=96, Nz=96, X=6000, Z=7000, n_super=60000,
                       sounding=CONGESTUS, forcing=BOMEX_FORCING, N_modes=(200.,), nu=16,
                       nu_scalar=1.5, collisions=True, switch_TICE=True, eps=0.01,
-                      sediment=True, **_COMMON),
+                      sediment=True, entrain_mode="auto", **_COMMON),
     # nu_scalar 0.2 (not the 1.5 the convective cases use): the deck lives or dies by
     # the SHARP 40-m inversion, and explicit scalar diffusion at 1.5 m^2/s erodes it at
     # ~8x the real entrainment rate -- the BL then dries out and the deck starves by
@@ -42,7 +49,10 @@ CASES = {
     "dycoms": dict(nt=1500, dt=1.0, Nx=96, Nz=48, X=4800, Z=1200, n_super=60000,
                    sounding=DYCOMS, rad_cool=DYCOMS_RADIATION, forcing=DYCOMS_FORCING,
                    periodic_x=True, N_modes=(250.,), nu=6, nu_scalar=0.2, collisions=True,
-                   switch_TICE=True, eps=0.01, sediment=True, **_COMMON),
+                   switch_TICE=True, eps=0.01, sediment=True,
+                   entrain_mode="auto", **_COMMON),   # deck-safe: on a SOLID deck the closure
+    #   self-limits to ~no-op (no clear air at deck level; real Sc dilution is cloud-TOP
+    #   entrainment, not modelled) -- kept on so broken-deck states still mix at cloud edges
     "rico": dict(nt=1200, dt=1.5, Nx=96, Nz=72, X=4800, Z=4000, n_super=60000,
                  sounding=RICO, forcing=RICO_FORCING, N_modes=(70.,), nu=12,
                  nu_scalar=1.5, collisions=True, switch_TICE=True, eps=0.01,
@@ -81,7 +91,8 @@ CASES = {
                    N_modes=(60.,), nu=6, nu_scalar=1.0, collisions=True,
                    switch_TICE=True, eps=0.01, sediment=True, ice=True,
                    freezing_mode="abifm", inp_n_cm3=0.001, inp_r_um=0.37,
-                   inp_sigma=2.55, inp_species="default", inp_frac=0.5, **_COMMON),
+                   inp_sigma=2.55, inp_species="default", inp_frac=0.5,
+                   entrain_mode="auto", **_COMMON),   # MPC survives (weak |w| self-limits mixing)
     # Idealized CIRRUS: the domain IS the upper-tropospheric layer (P0=250 hPa, ~10 km),
     # no surface boundary layer. An ice-supersaturated cold layer (T~228 K, below the
     # homogeneous-freezing threshold) glaciates by HOMOGENEOUS freezing with NO ice nuclei
@@ -109,6 +120,9 @@ CASES = {
     # ice anvil that snows out -- the iconic thunderstorm shape. The Boussinesq core caps
     # convection shallow (~2.6 km). (No surface forcing: the cap would suppress it anyway; the
     # bubble is the trigger. A wide domain leaves clear, subsiding air around the tower.)
+    # entrain_mode stays OFF here: lateral-entrainment closures over-dilute organized deep
+    # cores and the thin anvil (the classic entrainment dilemma) -- even eps=0.05/km cut the
+    # anvil IWP 40->7 g/m^2 in the fit sweep. b_max is the crude dilution closure for deep.
     "deep_convection": dict(nt=2000, dt=4.0, Nx=140, Nz=128, X=21000, Z=16000, n_super=42000,
                             sounding=CUMULONIMBUS, dynamics="anelastic", periodic_x=True,
                             N_modes=(150.,), nu=16, nu_scalar=1.5, collisions=True,
