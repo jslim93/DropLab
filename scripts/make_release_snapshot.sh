@@ -37,10 +37,17 @@ rsync -a --delete \
   --exclude 'SENSITIVITY_TEST_HANDOFF.md' --exclude 'ensemble_comparison.py' \
   "$SRC/" "$DEST/"
 
-# sanity: no personal paths / private references in the snapshot
-if grep -rn "$HOME" "$DEST" \
+# sanity: no personal paths / private references in the snapshot.
+# The deny pattern is NOT hardcoded — spelling out private path/codename literals here
+# would itself leak them into the public snapshot. Defaults to $HOME (catches any local
+# absolute path); export SNAPSHOT_DENY_RE to add project codenames, e.g.
+#   SNAPSHOT_DENY_RE="$HOME\|MYPROJECT\|my_vault" ./scripts/make_release_snapshot.sh
+# Notebooks ARE scanned: stray cell OUTPUT (tracebacks, warnings) is the most common
+# way a local path reaches a release, and excluding *.ipynb here once let one through.
+DENY_RE="${SNAPSHOT_DENY_RE:-$HOME}"
+if grep -rn "$DENY_RE" "$DEST" \
      --include='*.py' --include='*.md' --include='*.toml' --include='*.yaml' \
-     --include='*.yml' --include='*.cff' -l 2>/dev/null | grep -v ipynb; then
+     --include='*.yml' --include='*.cff' --include='*.ipynb' -l 2>/dev/null; then
   echo "!! personal references found above — fix before publishing"; exit 1
 fi
 echo "clean: no personal paths in snapshot"

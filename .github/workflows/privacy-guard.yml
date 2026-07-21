@@ -1,0 +1,66 @@
+# Continuous privacy guard for the PUBLIC release repo.
+#
+# Third layer of defence, after (1) the pre-push hook in the working repo and (2) the
+# exclude.txt filter in scripts/sync_to_droplab.sh. Those two run on a developer machine
+# and can be skipped or bypassed; this one runs on GitHub and cannot.
+#
+# Scoped to jslim93/DropLab on purpose: the private working repo legitimately tracks
+# manuscripts and local paths, so running these checks there would only produce noise.
+name: privacy guard
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  guard:
+    if: github.repository == 'jslim93/DropLab'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: No private research directories
+        run: |
+          if ls -d paper manuscript_material assessment docs/superpowers CLAUDE.md 2>/dev/null | grep -q .; then
+            echo "::error::private research material present in the public release"
+            ls -d paper manuscript_material assessment docs/superpowers CLAUDE.md 2>/dev/null
+            exit 1
+          fi
+          echo "ok: no private directories"
+
+      - name: No absolute local paths
+        run: |
+          # Notebooks are included deliberately: a stray path in saved cell OUTPUT is how
+          # /Users/... reached this repo in July 2026, and the old guard skipped *.ipynb.
+          if grep -rnE '(/Users/[A-Za-z0-9._-]+|/home/[a-z][A-Za-z0-9._-]*|/project/meteo|/Volumes/|[A-Z]:\\\\Users)' . \
+               --include='*.py' --include='*.md' --include='*.ipynb' --include='*.toml' \
+               --include='*.yaml' --include='*.yml' --include='*.cff' --include='*.sh' \
+               --exclude='privacy-guard.yml' --exclude-dir=.git 2>/dev/null; then
+            echo "::error::absolute local path in a public file (see matches above)"
+            exit 1
+          fi
+          echo "ok: no absolute local paths"
+
+      - name: No compiled artefacts carrying build paths
+        run: |
+          # .pyc embeds co_filename, i.e. the absolute source path at compile time.
+          if find . -path ./.git -prune -o \( -name '*.pyc' -o -name '*.pyo' \) -print | grep -q .; then
+            echo "::error::compiled Python committed; .pyc embeds the original absolute path"
+            find . -path ./.git -prune -o \( -name '*.pyc' -o -name '*.pyo' \) -print
+            exit 1
+          fi
+          echo "ok: no compiled artefacts"
+
+      - name: No credentials
+        run: |
+          if grep -rnE '(ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9]{32,}|AKIA[0-9A-Z]{16}|hf_[A-Za-z0-9]{34})' . \
+               --exclude-dir=.git 2>/dev/null; then
+            echo "::error::credential-shaped string found"
+            exit 1
+          fi
+          if ls .streamlit/secrets.toml .env 2>/dev/null | grep -q .; then
+            echo "::error::secrets file committed"; exit 1
+          fi
+          echo "ok: no credentials"
