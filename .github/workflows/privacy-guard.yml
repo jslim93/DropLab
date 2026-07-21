@@ -20,6 +20,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # commit-metadata check needs the whole history
+
+      - name: Commit author emails are the GitHub noreply address
+        run: |
+          # A history rewrite only fixes the PAST. The very next commit re-pollutes the
+          # repo if the author's git config still holds a personal address - which is
+          # exactly what happened once: sync_to_droplab.sh committed with the local
+          # user.email straight after a clean rewrite. This check is the ratchet.
+          bad=$(git log --all --pretty='%ae%n%ce' | sort -u | grep -v '@users.noreply.github.com$' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::non-noreply address in commit metadata"
+            echo "$bad"
+            echo "fix: git config user.email '<id>+<user>@users.noreply.github.com'"
+            exit 1
+          fi
+          echo "ok: all commit metadata uses the noreply address"
 
       - name: No private research directories
         run: |
